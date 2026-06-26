@@ -1,4 +1,4 @@
-# ShipmentHub Web
+git commit -m "chore: add comprehensive gitignore for Node and Next.js"# ShipmentHub Web
 
 Next.js 14 (App Router) front-end for the ShipmentHub logistics coordination platform.
 
