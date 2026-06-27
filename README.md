@@ -1,49 +1,28 @@
-# ShipmentHub Web
+# ShipmentHub
+Coordinate your shipments and give customers real-time visibility from pickup to delivery 
 
-Next.js 14 (App Router) front-end for the ShipmentHub logistics coordination platform.
+## Our Problem Statement 
 
-## Stack
+Across many African countries, freight coordination still relies heavily on phone calls, messaging applications, and spreadsheets. This often results in poor communication, delayed updates, and limited visibility into shipment progress.
 
-Next.js 14 · React 18 · TypeScript · Tailwind CSS · Leaflet (react-leaflet) · Axios
+Customers frequently do not know where their cargo is, while operations teams spend significant time manually providing updates. ShipmentHub addresses this challenge by centralising shipment management, enabling real-time tracking, and improving communication between clients, operators, and recipients.
 
-## Setup
+## Target Users 
 
-```bash
-cp .env.local.example .env.local   # Windows PowerShell: copy .env.local.example .env.local
-npm install
-npm run dev                        # http://localhost:3000
-```
+- Clients: Businesses or individuals who need goods transported and want visibility into their shipment status
+- Operations Teams: Staff responsible for coordinating shipments, updating shipment statuses, and monitoring delivery progress
+- Customers and Recipients: Anyone who receives a tracking link and wants to follow the progress of a shipment without creating an account
 
-> Make sure the API is running (default `http://localhost:4000`) and `NEXT_PUBLIC_API_URL`
-> points at it.
+## Core Features 
 
-## Scripts
+- User Authentication and Role Management: Secure login using JWT authentication with role-based access for clients and operators
+- Shipment Requests: Clients can create shipment requests, provide cargo details, and specify pickup and delivery locations using an interactive map
+- Operations Dashboard: Operators can manage all shipments from a single dashboard and monitor shipment activity in real time
+- Status and Location Updates: Operators can manage all shipments from a single dashboard and monitor shipment activity in real time
+- Public Shipment Tracking: Customers can track shipments through a secure shareable link without needing to create an account
 
-| Script          | Description                  |
-| --------------- | --------------------------- |
-| `npm run dev`   | Start the dev server        |
-| `npm run build` | Production build            |
-| `npm start`     | Serve the production build  |
-| `npm run lint`  | Lint with ESLint            |
-
-## Routes
-
-| Route                          | Access   | Description                                |
-| ------------------------------ | -------- | ----------------------------------------- |
-| `/`                            | Public   | Landing page                              |
-| `/signin`                      | Public   | Login (with seeded demo accounts)         |
-| `/dashboard`                   | Auth     | Role-aware overview                       |
-| `/dashboard/shipments`         | Auth     | Shipment list                             |
-| `/dashboard/shipments/new`     | Client   | Create a shipment                         |
-| `/dashboard/shipments/[id]`    | Auth     | Detail, timeline, map, operator controls  |
-| `/track/[token]`               | Public   | Public tracking page                      |
-
-## Project layout
-
-```
-app/            # App Router pages
-components/      # UI, map, timeline, forms
-context/         # AuthContext (JWT session)
-hooks/           # usePolling
-lib/             # api client, auth storage, types, helpers
-```
+## Technology Stack 
+- Frontend: Next.js 14, React 18, TypeScript, Tailwind CSS, Leaflet
+- Backend: Node.js, Express.js, Sequelize ORM, JWT Authentication, Joi Validation, Helmet
+- Database: PostgreSQL
+- Testing: Jest, Supertest 
