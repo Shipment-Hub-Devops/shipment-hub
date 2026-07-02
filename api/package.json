@@ -14,6 +14,7 @@
     "seed": "sequelize-cli db:seed:all",
     "seed:undo": "sequelize-cli db:seed:undo:all",
     "db:reset": "npm run migrate:undo && npm run migrate && npm run seed",
+    "lint": "eslint src/",
     "test": "cross-env NODE_ENV=test jest --runInBand --forceExit"
   },
   "dependencies": {
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
+    "eslint": "^8.57.0",
     "jest": "^29.7.0",
     "nodemon": "^3.1.4",
     "sequelize-cli": "^6.6.2",
