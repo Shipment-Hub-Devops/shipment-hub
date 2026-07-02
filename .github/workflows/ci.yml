@@ -16,6 +16,23 @@ jobs:
   # Backend job: validates the Express API in the api/ folder
   backend:
     runs-on: ubuntu-latest
+
+    # Start a PostgreSQL service for tests
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: shipmenthub_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     defaults:
       run:
         # Set working directory to api folder for all steps
@@ -25,11 +42,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Set up Node.js 18 to match the project's engine requirement
+      # Set up Node.js 20 to match GitHub Actions runner
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Install dependencies
         run: npm install
@@ -41,8 +58,12 @@ jobs:
       # Fail pipeline if any test fails
       - name: Run tests
         run: npm test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shipmenthub_test
+          NODE_ENV: test
 
-  # Frontend job: validates the Next.js app in the web/ folder
+  # Frontend job: will be enabled once the web/ folder is pushed to the repo
+  # Currently set to continue-on-error to avoid blocking the pipeline
   frontend:
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -55,10 +76,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Set up Node.js 20 to match GitHub Actions runner
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       # --legacy-peer-deps needed due to react-leaflet v5 requiring React 19
       # while the project uses React 18
@@ -67,4 +89,4 @@ jobs:
 
       # Fail pipeline if linting errors are found
       - name: Run linting
-        run: npm run lint
+        run: npm run lint 
