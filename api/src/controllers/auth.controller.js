@@ -26,3 +26,39 @@ const me = catchAsync(async (req, res) => {
 });
 
 module.exports = { login, me };
+
+const register = async (req, res) => {
+  try {
+    // 1. Extract the name alongside email and password
+    const { name, email, password } = req.body;
+
+    const existingUser = await db.User.findOne({ where: { email } });
+    if (existingUser) {
+      return res.status(400).json({ message: 'A user with this email already exists.' });
+    }
+
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // 2. Pass the name, and change 'password' to 'passwordHash'
+    const newUser = await db.User.create({
+      name,
+      email,
+      passwordHash: hashedPassword, 
+    });
+
+    return res.status(201).json({
+      message: 'User registered successfully!',
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+      },
+    });
+  } catch (error) {
+    console.error('Registration Error:', error);
+    return res.status(500).json({ message: 'Internal server error during registration.' });
+  }
+};
+
+module.exports = { login, me, register };
