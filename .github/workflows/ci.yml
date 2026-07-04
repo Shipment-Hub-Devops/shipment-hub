@@ -62,31 +62,31 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shipmenthub_test
           NODE_ENV: test
 
-  # Frontend job: will be enabled once the web/ folder is pushed to the repo
-  # Currently set to continue-on-error to avoid blocking the pipeline
-  frontend:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    defaults:
-      run:
-        # Set working directory to web folder for all steps
-        working-directory: ./web
+  # # Frontend job: will be enabled once the web/ folder is pushed to the repo
+  # # Currently set to continue-on-error to avoid blocking the pipeline
+  # frontend:
+  #   runs-on: ubuntu-latest
+  #   continue-on-error: true
+  #   defaults:
+  #     run:
+  #       # Set working directory to web folder for all steps
+  #       working-directory: ./web
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
 
-      # Set up Node.js 20 to match GitHub Actions runner
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+  #     # Set up Node.js 20 to match GitHub Actions runner
+  #     - name: Set up Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
 
-      # --legacy-peer-deps needed due to react-leaflet v5 requiring React 19
-      # while the project uses React 18
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
+  #     # --legacy-peer-deps needed due to react-leaflet v5 requiring React 19
+  #     # while the project uses React 18
+  #     - name: Install dependencies
+  #       run: npm install --legacy-peer-deps
 
-      # Fail pipeline if linting errors are found
-      - name: Run linting
-        run: npm run lint 
+  #     # Fail pipeline if linting errors are found
+  #     - name: Run linting
+  #       run: npm run lint 
