@@ -17,13 +17,18 @@ jobs:
   backend:
     runs-on: ubuntu-latest
 
+    # Runs the tests on both Node 18 and Node 20 at the same time
+    strategy:
+      matrix:
+        node-version: [18, 20]
+
     # Start a PostgreSQL service for tests
     services:
       postgres:
         image: postgres:15
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: shipmenthub_test
         ports:
           - 5432:5432
@@ -35,31 +40,45 @@ jobs:
 
     defaults:
       run:
-        # Set working directory to api folder for all steps
+        # Set the  working directory to api folder for all steps of the workflow since this is the backend job
         working-directory: ./api
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Set up Node.js 20 to match GitHub Actions runner
-      - name: Set up Node.js
+      # Set up Node.js version based on the matrix configuration, and cache npm dependencies for faster builds
+      - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+      
+      # this instaslls the dependencies from package-lock.json without changing them
       - name: Install dependencies
-        run: npm install
-
-      # Fail pipeline if linting errors are found
+        run: npm ci
+      
+      # Verifies that the Dockerfile builds sucessfully from the project root 
+      - name: Build Docker image
+        run: docker build -t shipmenthub-api:ci -f ../Dockerfile ..
+      
+      # Checks that the test suite is working correctly 
+      - name: Run one focused test
+        run: npm test -- tests/tracking.test.js
+        env:
+          DATABASE_URL: postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/shipmenthub_test
+          NODE_ENV: test
+      
+      # Fail pipeline if they are any linting errors
       - name: Run linting
         run: npm run lint
 
-      # Fail pipeline if any test fails
+      # Fail pipeline if any tests fail, but still runs the linting and other steps
       - name: Run tests
         run: npm test
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shipmenthub_test
+          DATABASE_URL: postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/shipmenthub_test
           NODE_ENV: test
 
   # # Frontend job: will be enabled once the web/ folder is pushed to the repo

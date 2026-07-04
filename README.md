@@ -37,3 +37,52 @@ The `main` branch is protected to enforce our DevOps review workflow:
 - **Require branches up to date** — prevents broken merges from out-of-date branches.
 - **Require conversation resolution** — all review comments must be addressed.
 - **Include administrators** — rules apply to everyone, no exceptions.
+
+## Local Development with Docker
+
+You can run the entire ShipmentHub backend architecture locally using Docker. This ensures you have the exact same Node.js and PostgreSQL environment as the rest of the team.
+
+### Prerequisites
+- Docker Desktop installed and running
+- Git installed
+
+### Step 1: Clone the repository
+```bash
+git clone [https://github.com/your-username/shipmenthub.git](https://github.com/your-username/shipmenthub.git)
+cd shipmenthub
+
+## Step 2: Configure Environment Variables
+
+Create a `.env` file in the root of the project repository (the same directory as `docker-compose.yml`) and add the following environment variables:
+
+```env
+DATABASE_URL=postgres://postgres:postgres@db:5432/shipmenthub_dev
+JWT_SECRET=add-a-secure-local-secret-here
+JWT_EXPIRES_IN=7d
+```
+
+## Step 3: Start the Application
+
+Build the multi-stage Docker images and start the application containers in the background:
+
+```bash
+docker-compose up --build -d
+```
+
+## Step 4: Verify the Application
+
+The API waits for the PostgreSQL database to become healthy before starting.
+
+Once the containers are running, verify that the API is healthy by opening the following endpoint in your browser:
+
+**API Health Check:** http://localhost:4000/health
+
+If everything is configured correctly, you should receive a successful health check response.
+
+## Step 5: Stop the Application
+
+To stop the application, shut down all running containers, and remove the custom Docker network, run:
+
+```bash
+docker-compose down
+```
