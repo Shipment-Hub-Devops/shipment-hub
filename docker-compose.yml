@@ -1,25 +1,25 @@
-version: "3.8"
-
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: shipmenthub_dev
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-shipmenthub_dev}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-shipmenthub_dev}"]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - app-network
 
   api:
-    build: ./api
+    build:
+      context: ./api
     restart: unless-stopped
     depends_on:
       db:
@@ -27,12 +27,21 @@ services:
     ports:
       - "4000:4000"
     environment:
-      PORT: 4000
-      NODE_ENV: development
-      DATABASE_URL: postgres://postgres:postgres@db:5432/shipmenthub_dev
-      JWT_SECRET: replace-with-a-long-random-secret
-      JWT_EXPIRES_IN: 7d
-      CLIENT_ORIGIN: http://localhost:3000
+      PORT: ${PORT:-4000}
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL_TEST: ${DATABASE_URL_TEST}
+      DB_CONNECT_RETRIES: ${DB_CONNECT_RETRIES:-10}
+      DB_CONNECT_RETRY_DELAY_MS: ${DB_CONNECT_RETRY_DELAY_MS:-3000}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3000}
+    networks:
+      - app-network
 
 volumes:
-  pgdata:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge
