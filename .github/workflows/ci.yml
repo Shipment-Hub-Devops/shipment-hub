@@ -57,25 +57,25 @@ jobs:
       
       # this instaslls the dependencies from package-lock.json without changing them
       - name: Install dependencies
-        run: npm ci
-      
-      # Verifies that the Dockerfile builds sucessfully from the project root 
+        run: npm install
+
+      #Build docker image for the API service to ensure it builds correctly
       - name: Build Docker image
-        run: docker build -t shipmenthub-api:ci -f ../Dockerfile ..
-      
-      # Checks that the test suite is working correctly 
+        run: docker build -t shipmenthub-api:ci ./
+
+      #Runs a focused test to ensure the test suite is working correctly
       - name: Run one focused test
         run: npm test -- tests/tracking.test.js
         env:
           DATABASE_URL: postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/shipmenthub_test
           NODE_ENV: test
-      
-      # Fail pipeline if they are any linting errors
+
+      # Fail pipeline if linting errors are found
       - name: Run linting
         run: npm run lint
 
-      # Fail pipeline if any tests fail, but still runs the linting and other steps
-      - name: Run tests
+      # Fail pipeline if any test fails
+      - name: Run full test suite
         run: npm test
         env:
           DATABASE_URL: postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/shipmenthub_test
