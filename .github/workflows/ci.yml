@@ -89,4 +89,4 @@ jobs:
 
       # Fail pipeline if linting errors are found
       - name: Run linting
-        run: npm run lint 
+        run: npm run lint    
