@@ -26,3 +26,14 @@ Customers frequently do not know where their cargo is, while operations teams sp
 - Backend: Node.js, Express.js, Sequelize ORM, JWT Authentication, Joi Validation, Helmet
 - Database: PostgreSQL
 - Testing: Jest, Supertest 
+
+## Branch Protection (main)
+
+The `main` branch is protected to enforce our DevOps review workflow:
+
+- **Require pull request + 1 approval** — no code reaches main without peer review.
+- **Dismiss stale approvals** — re-review is forced if new commits are pushed after approval.
+- **Require status checks** — CI must pass before merge (checks added in F2).
+- **Require branches up to date** — prevents broken merges from out-of-date branches.
+- **Require conversation resolution** — all review comments must be addressed.
+- **Include administrators** — rules apply to everyone, no exceptions.
