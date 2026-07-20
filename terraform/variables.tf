@@ -8,7 +8,7 @@ variable "location" {
 variable "vm_size" {
   type        = string
   description = "The compute capacity of the virtual machine" 
-  default     = "Standard_B2s"
+  default     = "Standard_D2_v4"
 }
 
 

@@ -1,3 +1,5 @@
+# Creates the main private network space for our cloud infrastructure. 
+# This is where all the other resources will be created and connected to.
 resource "azurerm_resource_group" "rg" {
   name     = var.name_of_rg
   location = var.location
@@ -17,6 +19,8 @@ resource "azurerm_subnet" "subnet" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
+# this actuallly creates the output for the public ip address we get after running terraform apply
+# So we can connect to our server using the public ip address and the ssh key we created in the compute.tf file
 resource "azurerm_public_ip" "pip" {
   name                = "pip"
   location            = azurerm_resource_group.rg.location
@@ -60,3 +64,5 @@ resource "azurerm_network_interface_security_group_association" "nsg_assoc" {
   network_interface_id      = azurerm_network_interface.nic.id
   network_security_group_id = azurerm_network_security_group.nsg.id
 }
+
+# Also Terraform actually doesnt care about the order of the resources in the file, it will figure out the dependencies and create them in the right order
