@@ -191,4 +191,10 @@ dist
 .history
 .ionide
 
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+.env
+
 # End of https://www.toptal.com/developers/gitignore/api/node,nextjs,visualstudiocode
