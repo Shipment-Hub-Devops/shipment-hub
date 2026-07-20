@@ -1,0 +1,25 @@
+resource "azurerm_linux_virtual_machine" "vm" {
+  name                  = "shipment-hub-vm"
+  location              = var.location
+  resource_group_name   = var.name_of_rg
+  size                  = var.vm_size
+  network_interface_ids = [azurerm_network_interface.nic.id]
+  admin_username        = var.user_admin
+
+  admin_ssh_key {
+    username   = var.user_admin
+    public_key = file("~/.ssh/id_rsa.pub")
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+}
