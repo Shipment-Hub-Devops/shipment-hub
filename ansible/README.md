@@ -7,7 +7,7 @@ deployment** for ShipmentHub on the Azure VM provisioned by Terraform.
 
 | File | Purpose |
 |------|---------|
-| `playbook.yml` | **Server configuration** — installs Docker Engine + Compose plugin, enables the service, adds the admin user to the `docker` group, and creates the app directory. |
+| `playbook.yml` | **Server configuration** — installs Docker Engine + Compose plugin, enables the service, adds the admin user to the `docker` group, creates the app directory, configures a **UFW firewall** (default-deny inbound; allows SSH + app port) and applies **SSH hardening** (key-only auth, no root login). |
 | `deploy.yml` | **Application deployment** — logs in to the container registry, renders the production Compose file, pulls the latest image, restarts the stack, and health-checks it. |
 | `inventory.ini` | Target hosts. Set `ansible_host` to the VM's public IP (Terraform output `vm_public_ip`). |
 | `templates/docker-compose.prod.yml.j2` | Production Compose file rendered onto the VM (uses the registry image instead of building locally). |
@@ -54,4 +54,6 @@ with a healthcheck gate so the API only starts once the database is ready.
 Validated end-to-end against an Azure VM (Ubuntu 22.04):
 
 - `playbook.yml` installs Docker Engine **29.6.2** + Compose **v5.3.1**; service active.
+- UFW active (default-deny inbound; `22` and `4000` allowed) and SSH hardened
+  (`PermitRootLogin no`, `PasswordAuthentication no`).
 - Re-running the playbook reports **0 changes** (idempotent).

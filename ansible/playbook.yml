@@ -9,6 +9,8 @@
   vars:
     docker_users:
       - "{{ ansible_user }}"
+    ssh_port: 22
+    app_port: 4000
 
   tasks:
     # ---------------------------------------------------------------
@@ -88,3 +90,55 @@
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: "0755"
+
+    # ---------------------------------------------------------------
+    # Host firewall (UFW) — default deny inbound, allow SSH + app port
+    # ---------------------------------------------------------------
+    - name: Install UFW
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+
+    - name: Allow SSH through the firewall
+      community.general.ufw:
+        rule: allow
+        port: "{{ ssh_port }}"
+        proto: tcp
+
+    - name: Allow application port through the firewall
+      community.general.ufw:
+        rule: allow
+        port: "{{ app_port }}"
+        proto: tcp
+
+    - name: Enable UFW with a default-deny inbound policy
+      community.general.ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+
+    # ---------------------------------------------------------------
+    # SSH hardening — key-only auth, no root login (validated before reload)
+    # ---------------------------------------------------------------
+    - name: Apply SSH hardening configuration
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-hardening.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible — security hardening
+          PermitRootLogin no
+          PasswordAuthentication no
+          PubkeyAuthentication yes
+          KbdInteractiveAuthentication no
+          X11Forwarding no
+          MaxAuthTries 3
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: Restart SSH
+
+  handlers:
+    - name: Restart SSH
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
