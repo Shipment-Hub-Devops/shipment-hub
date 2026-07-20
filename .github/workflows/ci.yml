@@ -3,26 +3,26 @@
 name: CI Pipeline
 
 on:
-  # Only run on feature branches, not directly on main
+  # Trigger on pushes to any branch except main
   push:
     branches-ignore:
       - main
-  # Also run when someone opens a PR targeting main
+  # Trigger on pull requests targeting main
   pull_request:
     branches:
       - main
 
 jobs:
-  # Validates the Express API: linting, tests, and Docker build
+  # Backend job: validates the Express API in the api/ folder
   backend:
     runs-on: ubuntu-latest
 
-    # Test against both Node 18 and 20 to catch version-specific issues
+    # Runs the tests on both Node 18 and Node 20 at the same time
     strategy:
       matrix:
         node-version: [18, 20]
 
-    # Spin up a real Postgres instance so the tests have a database to talk to
+    # Start a PostgreSQL service for tests
     services:
       postgres:
         image: postgres:15
@@ -40,14 +40,14 @@ jobs:
 
     defaults:
       run:
-        # All steps run inside the api/ folder
+        # Set the  working directory to api folder for all steps of the workflow since this is the backend job
         working-directory: ./api
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Pick the Node version from the matrix above
+      # Set up Node.js version based on the matrix configuration, and cache npm dependencies for faster builds
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
@@ -55,57 +55,60 @@ jobs:
           cache: 'npm'
           cache-dependency-path: api/package-lock.json
 
-      # Use npm ci instead of npm install to respect the lockfile exactly
+      # this instaslls the dependencies from package-lock.json without changing them
       - name: Install dependencies
         run: npm ci
 
-      # Make sure the Dockerfile still builds before running any tests
+      # Verifies that the Dockerfile builds sucessfully from the project root 
       - name: Build Docker image
         run: docker build -t shipmenthub-api:ci -f ../Dockerfile ..
 
-      # Quick sanity check: just the tracking tests to catch obvious breakage early
+      # Checks that the test suite is working correctly 
       - name: Run one focused test
         run: npm test -- tests/tracking.test.js
         env:
           DATABASE_URL: postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/shipmenthub_test
           NODE_ENV: test
 
-      # Block the pipeline if there are any linting errors
+      # Fail pipeline if they are any linting errors
       - name: Run linting
         run: npm run lint
 
-      # Run the full test suite ;pipeline fails if anything breaks
+      # Fail pipeline if any tests fail, but still runs the linting and other steps
       - name: Run tests
         run: npm test
         env:
           DATABASE_URL: postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/shipmenthub_test
           NODE_ENV: test
 
-  # Scans npm packages for known vulnerabilities
+  # Dependency scanning job: checks for known vulnerabilities in npm packages
   dependency-scan:
     runs-on: ubuntu-latest
     defaults:
       run:
-        # Audit the api dependencies specifically
+        # Run npm audit in the api folder
         working-directory: ./api
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Set up Node.js 20 for dependency scanning
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
+      # Install dependencies before running audit
       - name: Install dependencies
         run: npm ci
 
-      # Only fail on high or critical severity : moderate issues are logged but don't block
+      # Run npm audit to check for known vulnerabilities in dependencies
+      # --audit-level=high means pipeline only fails on high or critical vulnerabilities
       - name: Run npm audit
         run: npm audit --audit-level=high
 
-  # Scans the Docker image for OS and package vulnerabilities using Trivy
+  # Container image scanning job: scans Docker image for vulnerabilities using Trivy
   image-scan:
     runs-on: ubuntu-latest
 
@@ -113,11 +116,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Build fresh so we're scanning exactly what would go to production
+      # Build the Docker image to scan
       - name: Build Docker image
         run: docker build -t shipmenthub-api:scan -f Dockerfile .
 
-      # Trivy checks every layer of the image : fails only on HIGH or CRITICAL findings
+      # Scan the Docker image for vulnerabilities
+      # --exit-code 1 means pipeline fails if HIGH or CRITICAL vulnerabilities are found
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -126,21 +130,31 @@ jobs:
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
 
-  # Frontend job: commented out until the web/ folder is pushed
+  # # Frontend job: will be enabled once the web/ folder is pushed to the repo
+  # # Currently set to continue-on-error to avoid blocking the pipeline
   # frontend:
   #   runs-on: ubuntu-latest
   #   continue-on-error: true
   #   defaults:
   #     run:
+  #       # Set working directory to web folder for all steps
   #       working-directory: ./web
+
   #   steps:
   #     - name: Checkout code
   #       uses: actions/checkout@v4
+
+  #     # Set up Node.js 20 to match GitHub Actions runner
   #     - name: Set up Node.js
   #       uses: actions/setup-node@v4
   #       with:
   #         node-version: '20'
+
+  #     # --legacy-peer-deps needed due to react-leaflet v5 requiring React 19
+  #     # while the project uses React 18
   #     - name: Install dependencies
   #       run: npm install --legacy-peer-deps
+
+  #     # Fail pipeline if linting errors are found
   #     - name: Run linting
   #       run: npm run lint
