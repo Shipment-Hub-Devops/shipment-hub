@@ -1,0 +1,56 @@
+---
+# Deploy (or re-deploy) the ShipmentHub app on the VM.
+# Called by the CD pipeline after a new image is pushed to the registry:
+#   ansible-playbook -i inventory.ini deploy.yml \
+#     -e registry_server=<acr>.azurecr.io \
+#     -e registry_username=<user> \
+#     -e registry_password=<pass> \
+#     -e app_image=<acr>.azurecr.io/shipmenthub-api:latest \
+#     -e database_url=... -e jwt_secret=...
+- name: Deploy ShipmentHub application
+  hosts: web
+  become: true
+
+  vars:
+    app_dir: /opt/shipment-hub
+    app_image: "{{ registry_server }}/shipmenthub-api:latest"
+
+  tasks:
+    - name: Log in to container registry
+      community.docker.docker_login:
+        registry_url: "{{ registry_server }}"
+        username: "{{ registry_username }}"
+        password: "{{ registry_password }}"
+      no_log: true
+
+    - name: Render production docker-compose file
+      ansible.builtin.template:
+        src: templates/docker-compose.prod.yml.j2
+        dest: "{{ app_dir }}/docker-compose.yml"
+        mode: "0644"
+
+    - name: Pull latest images
+      ansible.builtin.command:
+        cmd: docker compose pull
+        chdir: "{{ app_dir }}"
+      changed_when: true
+
+    - name: Start / restart services
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
+        chdir: "{{ app_dir }}"
+      changed_when: true
+
+    - name: Wait for API health endpoint
+      ansible.builtin.uri:
+        url: http://localhost:4000/health
+        status_code: 200
+      register: health
+      retries: 10
+      delay: 5
+      until: health.status == 200
+
+    - name: Remove dangling images
+      ansible.builtin.command:
+        cmd: docker image prune -f
+      changed_when: true
