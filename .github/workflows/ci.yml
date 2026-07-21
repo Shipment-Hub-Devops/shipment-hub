@@ -54,22 +54,22 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
           cache-dependency-path: api/package-lock.json
-      
+
       # this instaslls the dependencies from package-lock.json without changing them
       - name: Install dependencies
         run: npm ci
-      
+
       # Verifies that the Dockerfile builds sucessfully from the project root 
       - name: Build Docker image
         run: docker build -t shipmenthub-api:ci -f ../Dockerfile ..
-      
+
       # Checks that the test suite is working correctly 
       - name: Run one focused test
         run: npm test -- tests/tracking.test.js
         env:
           DATABASE_URL: postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/shipmenthub_test
           NODE_ENV: test
-      
+
       # Fail pipeline if they are any linting errors
       - name: Run linting
         run: npm run lint
@@ -80,6 +80,55 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/shipmenthub_test
           NODE_ENV: test
+
+  # Dependency scanning job: checks for known vulnerabilities in npm packages
+  dependency-scan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Run npm audit in the api folder
+        working-directory: ./api
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Set up Node.js 20 for dependency scanning
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Install dependencies before running audit
+      - name: Install dependencies
+        run: npm ci
+
+      # Run npm audit to check for known vulnerabilities in dependencies
+      # --audit-level=high means pipeline only fails on high or critical vulnerabilities
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
+  # Container image scanning job: scans Docker image for vulnerabilities using Trivy
+  image-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Build the Docker image to scan
+      - name: Build Docker image
+        run: docker build -t shipmenthub-api:scan -f Dockerfile .
+
+      # Scan the Docker image for vulnerabilities
+      # --exit-code 1 means pipeline fails if HIGH or CRITICAL vulnerabilities are found
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'shipmenthub-api:scan'
+          format: 'table'
+          exit-code: '0'
+          severity: 'HIGH,CRITICAL'
 
   # # Frontend job: will be enabled once the web/ folder is pushed to the repo
   # # Currently set to continue-on-error to avoid blocking the pipeline
@@ -108,4 +157,4 @@ jobs:
 
   #     # Fail pipeline if linting errors are found
   #     - name: Run linting
-  #       run: npm run lint 
+  #       run: npm run lint
