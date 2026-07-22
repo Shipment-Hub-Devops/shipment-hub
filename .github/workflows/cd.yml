@@ -1,0 +1,113 @@
+# CD Pipeline for ShipmentHub — runs ONLY on merge/push to main.
+# Flow: verify (CI checks) -> build & push image to ACR -> deploy via Ansible.
+#
+# Required repository secrets:
+#   ACR_LOGIN_SERVER   e.g. shipmenthubacr2026.azurecr.io
+#   ACR_USERNAME       ACR admin username   (terraform output acr_admin_username)
+#   ACR_PASSWORD       ACR admin password   (terraform output acr_admin_password)
+#   SSH_PRIVATE_KEY    private key matching the key deployed on the VMs
+#   JUMPBOX_IP         public IP of the jumpbox (terraform output jumpbox_public_ip)
+#   APP_VM_PRIVATE_IP  private IP of the app VM (default 10.0.2.10)
+#   VM_ADMIN_USER      azureadmin
+#   DATABASE_URL       managed postgres connection string (terraform output database_url)
+#   JWT_SECRET         application JWT secret
+name: CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # Re-run the same quality gates as CI before shipping
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Dependency scan
+        run: npm audit --audit-level=high
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:${{ github.sha }} \
+                       -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest .
+
+      # Scan the built image before pushing; fail on CRITICAL findings
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL'
+
+      - name: Log in to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Push image (sha + latest)
+        run: |
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:${{ github.sha }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: pipx install ansible-core && pipx inject ansible-core requests || sudo apt-get update && sudo apt-get install -y ansible
+
+      - name: Write SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Write inventory (app VM via jumpbox)
+        run: |
+          cat > inventory.ini <<EOF
+          [web]
+          shipment-hub-vm ansible_host=${{ secrets.APP_VM_PRIVATE_IP }}
+
+          [web:vars]
+          ansible_user=${{ secrets.VM_ADMIN_USER }}
+          ansible_ssh_private_key_file=~/.ssh/deploy_key
+          ansible_python_interpreter=/usr/bin/python3
+          ansible_ssh_common_args=-o StrictHostKeyChecking=no -o ProxyJump=${{ secrets.VM_ADMIN_USER }}@${{ secrets.JUMPBOX_IP }} -o ProxyCommand=none
+          EOF
+
+      - name: Deploy with Ansible
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+        run: |
+          ansible-playbook -i inventory.ini ansible/deploy.yml \
+            -e registry_server=${{ secrets.ACR_LOGIN_SERVER }} \
+            -e registry_username=${{ secrets.ACR_USERNAME }} \
+            -e registry_password=${{ secrets.ACR_PASSWORD }} \
+            -e app_image=${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest \
+            -e database_url='${{ secrets.DATABASE_URL }}' \
+            -e jwt_secret='${{ secrets.JWT_SECRET }}' \
+            -e use_managed_db=true
