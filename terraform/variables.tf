@@ -1,28 +1,39 @@
-
-variable "location" {
-  type        = string
-  description = "The Azure data center region"
-  default     = "uaenorth"
-}
-
-variable "vm_size" {
-  type        = string
-  description = "The compute capacity of the virtual machine" 
-  default     = "Standard_D2_v4"
-}
-
-
-
-variable "user_admin" {
-  type        = string
-  description = "The administrator username that will be used to SSH into the virtual machine"
-  default     = "azureadmin"
-}
-
 variable "name_of_rg" {
+  description = "The name of the resource group"
   type        = string
-  description = "The name of the resource Group that will be holding our Azure resources"
   default     = "azure-shipment"
 }
 
-# https://developer.hashicorp.com/terraform/language/values/variables used this resource write the variables format such as the type, description and setting the value
+variable "location" {
+  description = "The Azure region"
+  type        = string
+  default     = "uaenorth"
+}
+
+variable "user_admin" {
+  description = "Admin username for the VMs"
+  type        = string
+  default     = "azureadmin"
+}
+
+variable "ssh_public_key_path" {
+  description = "Path to the SSH public key"
+  type        = string
+  default     = "~/.ssh/id_rsa.pub"
+}
+
+variable "my_public_ip" {
+  description = "Your personal public IP address to allow SSH access to the Bastion (e.g., '203.0.113.50/32')"
+  type        = string
+}
+
+variable "registry_name" {
+  description = "The name of the container registry"
+  type        = string
+}
+
+variable "db_admin_password" {
+  description = "Password for the database administrator"
+  type        = string
+  sensitive   = true
+}
