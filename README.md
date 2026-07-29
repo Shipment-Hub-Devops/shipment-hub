@@ -27,6 +27,30 @@ Customers frequently do not know where their cargo is, while operations teams sp
 - Database: PostgreSQL
 - Testing: Jest, Supertest 
 
+## Running with Docker Compose
+
+To run the application locally with Docker Compose:
+
+1. Copy the root environment example file to `.env` and adjust the values if needed:
+   ```bash
+   copy .env.example .env
+   ```
+2. Start the services from the repository root:
+   ```bash
+   docker compose up --build
+   ```
+3. The API should be available at `http://localhost:4000`.
+4. To stop the services:
+   ```bash
+   docker compose down
+   ```
+5. To remove the persisted database volume as well:
+   ```bash
+   docker compose down -v
+   ```
+
+The root `.env.example` file is used by Docker Compose. If you also want to run the API directly from the `api/` folder for local development, you can use the example file at `api/.env.example`.
+
 ## Branch Protection (main)
 
 The `main` branch is protected to enforce our DevOps review workflow:

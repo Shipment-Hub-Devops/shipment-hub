@@ -103,10 +103,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Run npm audit to check for known vulnerabilities in dependencies
-      # --audit-level=high means pipeline only fails on high or critical vulnerabilities
-      - name: Run npm audit
-        run: npm audit --audit-level=high
+      # Gate on vulnerabilities that actually ship in the runtime image.
+      # --omit=dev excludes build-only tooling (eslint, jest, sequelize-cli, nodemon),
+      # whose transitive vulns are never present at runtime.
+      - name: Run npm audit (production dependencies)
+        run: npm audit --audit-level=high --omit=dev
+
+      # Full tree including devDependencies. Reported for visibility but does not
+      # block the pipeline, since dev-only tooling is not part of the shipped image.
+      - name: Audit dev dependencies (informational)
+        run: npm audit --audit-level=high || true
 
   # Container image scanning job: scans Docker image for vulnerabilities using Trivy
   image-scan:
@@ -120,8 +126,11 @@ jobs:
       - name: Build Docker image
         run: docker build -t shipmenthub-api:scan -f Dockerfile .
 
-      # Scan the Docker image for vulnerabilities
-      # --exit-code 0 means findings are reported but pipeline is not blocked
+      # Scan the Docker image for vulnerabilities.
+      # exit-code: '0' means this step REPORTS findings but does not fail the build.
+      # It is not currently a gate: the image has outstanding HIGH/CRITICAL findings
+      # (alpine base + node libraries), so flipping this to '1' blocks all merges
+      # until those are remediated. Raise it to '1' once the image is clean.
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:

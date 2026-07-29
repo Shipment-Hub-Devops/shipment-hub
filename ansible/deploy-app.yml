@@ -1,0 +1,74 @@
+---
+# F3 application deployment — build and run the containerised app on the VM
+# directly from source (no external registry required).
+#
+# Prerequisite: run playbook.yml first (installs Docker + Compose).
+# Usage:
+#   ansible-playbook -i inventory.ini deploy-app.yml -e jwt_secret=<a-long-secret>
+# Optionally override the branch to deploy:
+#   -e repo_version=main
+- name: Deploy ShipmentHub application (source build)
+  hosts: web
+  become: true
+
+  vars:
+    app_dir: /opt/shipment-hub
+    repo_url: https://github.com/Shipment-Hub-Devops/shipment-hub.git
+    repo_version: main
+    db_password: postgres
+    db_name: shipmenthub_dev
+    jwt_secret: change-me-with-e-jwt_secret
+    jwt_expires_in: 7d
+
+  tasks:
+    - name: Clone or update the application repository
+      ansible.builtin.git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: "{{ repo_version }}"
+        force: true
+
+    - name: Create the environment file
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/.env"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+        content: |
+          # Managed by Ansible
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD={{ db_password }}
+          POSTGRES_DB={{ db_name }}
+          # NODE_ENV stays 'development' here: the API's production config
+          # enforces SSL to the DB, which the local postgres container
+          # doesn't support. Production SSL comes with the managed DB later.
+          NODE_ENV=development
+          DATABASE_URL=postgres://postgres:{{ db_password }}@db:5432/{{ db_name }}
+          JWT_SECRET={{ jwt_secret }}
+          JWT_EXPIRES_IN={{ jwt_expires_in }}
+
+    - name: Build images and start the application stack
+      ansible.builtin.command:
+        cmd: docker compose up -d --build --remove-orphans
+        chdir: "{{ app_dir }}"
+      changed_when: true
+
+    - name: Wait for the API health endpoint to respond
+      ansible.builtin.uri:
+        url: http://localhost:4000/health
+        status_code: 200
+      register: health
+      retries: 20
+      delay: 6
+      until: health.status == 200
+
+    - name: Show running containers
+      ansible.builtin.command:
+        cmd: docker compose ps
+        chdir: "{{ app_dir }}"
+      changed_when: false
+      register: compose_ps
+
+    - name: Report deployment result
+      ansible.builtin.debug:
+        msg: "{{ compose_ps.stdout_lines }}"

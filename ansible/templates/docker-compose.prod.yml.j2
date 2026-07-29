@@ -1,0 +1,43 @@
+# Rendered by ansible/deploy.yml — do not edit on the server.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "{{ db_password | default('postgres') }}"
+      POSTGRES_DB: shipmenthub
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - shipment-network
+
+  api:
+    image: "{{ app_image }}"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DATABASE_URL: "{{ database_url | default('postgres://postgres:' ~ (db_password | default('postgres')) ~ '@db:5432/shipmenthub') }}"
+      JWT_SECRET: "{{ jwt_secret }}"
+      JWT_EXPIRES_IN: "{{ jwt_expires_in | default('7d') }}"
+      CLIENT_ORIGIN: "{{ client_origin | default('*') }}"
+    networks:
+      - shipment-network
+
+volumes:
+  pgdata:
+
+networks:
+  shipment-network:
+    driver: bridge
