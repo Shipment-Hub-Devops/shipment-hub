@@ -40,7 +40,7 @@ jobs:
 
     defaults:
       run:
-        # Set the  working directory to api folder for all steps of the workflow since this is the backend job
+        # Set the working directory to api folder for all steps of the workflow since this is the backend job
         working-directory: ./api
 
     steps:
@@ -121,7 +121,7 @@ jobs:
         run: docker build -t shipmenthub-api:scan -f Dockerfile .
 
       # Scan the Docker image for vulnerabilities
-      # --exit-code 1 means pipeline fails if HIGH or CRITICAL vulnerabilities are found
+      # --exit-code 0 means findings are reported but pipeline is not blocked
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -130,7 +130,7 @@ jobs:
           exit-code: '0'
           severity: 'HIGH,CRITICAL'
 
-  # Frontend job: will be enabled once the web/ folder is pushed to the repo
+  # Frontend job: runs linting on the Next.js web application
   frontend:
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -157,3 +157,20 @@ jobs:
       # Fail pipeline if linting errors are found
       - name: Run linting
         run: npm run lint
+
+  # IaC scanning job: scans Terraform files for security misconfigurations using Checkov
+  iac-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Install Checkov, an open source IaC static analysis tool
+      - name: Install Checkov
+        run: pip install checkov
+
+      # Scan the terraform/ directory for security misconfigurations
+      # --soft-fail means findings are reported but pipeline is not blocked
+      - name: Run Checkov on Terraform files
+        run: checkov -d terraform/ --soft-fail
