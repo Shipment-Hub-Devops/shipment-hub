@@ -198,4 +198,9 @@ dist
 .env
 *.tfvars
 
+# Locally downloaded scanner/tool binaries.
+# Install these in CI or via a package manager rather than committing them.
+tfsec
+*.exe
+
 # End of https://www.toptal.com/developers/gitignore/api/node,nextjs,visualstudiocode
