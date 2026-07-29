@@ -196,5 +196,6 @@ dist
 *.tfstate
 *.tfstate.*
 .env
+*.tfvars
 
 # End of https://www.toptal.com/developers/gitignore/api/node,nextjs,visualstudiocode
