@@ -1,6 +1,15 @@
 # Rendered by ansible/deploy.yml — do not edit on the server.
+{#
+  NODE_ENV drives the Sequelize config in api/src/config/config.js.
+  'production' enforces TLS to the database, which the managed Azure
+  Postgres requires and the local postgres:16-alpine container does not
+  support — so the two DB modes must not share a value.
+#}
+{% set managed_db = use_managed_db | default(false) | bool %}
+{% set node_env = 'production' if managed_db else 'development' %}
+{% set db_url = database_url | default('postgres://postgres:' ~ (db_password | default('postgres')) ~ '@db:5432/shipmenthub') %}
 services:
-{% if not (use_managed_db | default(false)) %}
+{% if not managed_db %}
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -22,7 +31,7 @@ services:
   api:
     image: "{{ app_image }}"
     restart: unless-stopped
-{% if not (use_managed_db | default(false)) %}
+{% if not managed_db %}
     depends_on:
       db:
         condition: service_healthy
@@ -31,15 +40,34 @@ services:
       - "4000:4000"
     environment:
       PORT: 4000
-      NODE_ENV: production
-      DATABASE_URL: "{{ database_url | default('postgres://postgres:' ~ (db_password | default('postgres')) ~ '@db:5432/shipmenthub') }}"
+      NODE_ENV: "{{ node_env }}"
+      DATABASE_URL: "{{ db_url }}"
       JWT_SECRET: "{{ jwt_secret }}"
       JWT_EXPIRES_IN: "{{ jwt_expires_in | default('7d') }}"
       CLIENT_ORIGIN: "{{ client_origin | default('*') }}"
     networks:
       - shipment-network
 
-{% if not (use_managed_db | default(false)) %}
+  # One-off schema migration runner, built from the `migrator` stage of the
+  # Dockerfile (the runtime image has no sequelize-cli).
+  # Held behind a compose profile so `docker compose up` never starts it;
+  # ansible/deploy.yml runs it explicitly via `docker compose run --rm migrate`.
+  migrate:
+    image: "{{ migrator_image }}"
+    profiles:
+      - migrate
+{% if not managed_db %}
+    depends_on:
+      db:
+        condition: service_healthy
+{% endif %}
+    environment:
+      NODE_ENV: "{{ node_env }}"
+      DATABASE_URL: "{{ db_url }}"
+    networks:
+      - shipment-network
+
+{% if not managed_db %}
 volumes:
   pgdata:
 {% endif %}
