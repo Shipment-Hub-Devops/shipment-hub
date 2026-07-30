@@ -1,0 +1,106 @@
+---
+# Publish the application through the jumpbox.
+#
+# The app VM sits in a private subnet with no public IP, so the jumpbox is the
+# only internet-facing host. nginx here is what makes the API reachable at
+#   http://<jumpbox_public_ip>/
+# which is the "Live, Working Application" URL for the project.
+#
+# Run after playbook.yml and deploy.yml have brought the app up:
+#   ansible-playbook -i inventory.summative.ini jumpbox.yml
+#
+# NOTE: the Azure NSG must also permit inbound TCP/80 to the jumpbox — see
+# terraform/modules/security. Ansible cannot open that for you.
+- name: Expose ShipmentHub through the jumpbox
+  hosts: jumpbox
+  become: true
+
+  vars:
+    app_host: 10.0.2.10
+    app_port: 4000
+
+  tasks:
+    - name: Install nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Configure the reverse proxy to the application VM
+      ansible.builtin.copy:
+        dest: /etc/nginx/sites-available/shipment-hub
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible — do not edit on the server.
+          server {
+              listen 80 default_server;
+              server_name _;
+
+              # Surfaces the upstream app rather than nginx in error pages
+              proxy_intercept_errors off;
+
+              location / {
+                  proxy_pass http://{{ app_host }}:{{ app_port }};
+                  proxy_http_version 1.1;
+                  proxy_set_header Host              $host;
+                  proxy_set_header X-Real-IP         $remote_addr;
+                  proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_connect_timeout 5s;
+                  proxy_read_timeout    30s;
+              }
+          }
+      notify: Reload nginx
+
+    - name: Enable the ShipmentHub site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/shipment-hub
+        dest: /etc/nginx/sites-enabled/shipment-hub
+        state: link
+      notify: Reload nginx
+
+    - name: Remove the default nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+
+    - name: Validate the nginx configuration
+      ansible.builtin.command:
+        cmd: nginx -t
+      changed_when: false
+
+    - name: Ensure nginx is enabled and running
+      ansible.builtin.systemd:
+        name: nginx
+        enabled: true
+        state: started
+
+    # Handlers normally run at the end of the play, which would leave the
+    # verification below testing the *old* configuration.
+    - name: Apply pending nginx configuration changes
+      ansible.builtin.meta: flush_handlers
+
+    - name: Verify the application is reachable through the proxy
+      ansible.builtin.uri:
+        url: http://localhost/health
+        status_code: 200
+      register: proxied
+      retries: 5
+      delay: 3
+      until: proxied.status == 200
+
+    - name: Report the public URL
+      ansible.builtin.debug:
+        msg: >-
+          ShipmentHub is reachable at http://{{ ansible_host }}/
+          (proxying to {{ app_host }}:{{ app_port }})
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
