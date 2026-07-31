@@ -1,16 +1,21 @@
 # CD Pipeline for ShipmentHub — runs ONLY on merge/push to main.
 # Flow: verify (CI checks) -> build & push image to ACR -> deploy via Ansible.
 #
-# Required repository secrets:
-#   ACR_LOGIN_SERVER   e.g. shipmenthubacr2026.azurecr.io
-#   ACR_USERNAME       ACR admin username   (terraform output acr_admin_username)
-#   ACR_PASSWORD       ACR admin password   (terraform output acr_admin_password)
-#   SSH_PRIVATE_KEY    private key matching the key deployed on the VMs
-#   JUMPBOX_IP         public IP of the jumpbox (terraform output jumpbox_public_ip)
-#   APP_VM_PRIVATE_IP  private IP of the app VM (default 10.0.2.10)
-#   VM_ADMIN_USER      azureadmin
-#   DATABASE_URL       managed postgres connection string (terraform output database_url)
-#   JWT_SECRET         application JWT secret
+# Required repository secrets, and where each value comes from.
+# Run `terraform output` in terraform/ after applying:
+#
+#   ACR_LOGIN_SERVER   terraform output registry_login_server
+#   ACR_USERNAME       terraform output registry_admin_username
+#   ACR_PASSWORD       terraform output -raw registry_admin_password
+#   JUMPBOX_IP         terraform output bastion_public_ip
+#   APP_VM_PRIVATE_IP  terraform output app_vm_private_ip
+#                      NOTE: the app NIC uses Dynamic allocation, so this is
+#                      assigned by Azure — never assume a fixed address.
+#   VM_ADMIN_USER      the admin_username variable used by terraform (azureadmin)
+#   SSH_PRIVATE_KEY    private key matching the public key deployed to the VMs
+#   JWT_SECRET         application JWT secret (generate one, not a terraform output)
+#   DATABASE_URL       constructed by hand — there is no single output for it:
+#                      postgresql://<admin>:<password>@<terraform output database_fqdn>:5432/shipmenthub?sslmode=require
 name: CD Pipeline
 
 on:

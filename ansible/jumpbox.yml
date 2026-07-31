@@ -16,7 +16,11 @@
   become: true
 
   vars:
-    app_host: 10.0.2.10
+    # Defaults to the address of the host in the [web] group, so the proxy
+    # target always follows the inventory rather than a hardcoded guess —
+    # the app NIC uses Dynamic allocation and has no fixed address.
+    # Override explicitly with -e app_host=<ip> if needed.
+    app_host: "{{ hostvars[groups['web'][0]]['ansible_host'] }}"
     app_port: 4000
 
   tasks:
