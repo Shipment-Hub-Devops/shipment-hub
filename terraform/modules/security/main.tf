@@ -12,7 +12,23 @@ resource "azurerm_network_security_group" "bastion_nsg" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "22"
-    source_address_prefix      = var.my_public_ip 
+    source_address_prefix      = var.my_public_ip
+    destination_address_prefix = "*"
+  }
+
+  # Public HTTP entry point for the application.
+  # The app VM has no public IP, so nginx on this host (ansible/jumpbox.yml)
+  # reverse-proxies port 80 to the app VM on 4000. Without this rule the
+  # application is not reachable from the internet at all.
+  security_rule {
+    name                       = "Allow-HTTP-From-Internet"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "Internet"
     destination_address_prefix = "*"
   }
 }
@@ -32,7 +48,7 @@ resource "azurerm_network_security_group" "app_nsg" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "22"
-    source_address_prefix      = var.bastion_subnet_prefix 
+    source_address_prefix      = var.bastion_subnet_prefix
     destination_address_prefix = "*"
   }
 
