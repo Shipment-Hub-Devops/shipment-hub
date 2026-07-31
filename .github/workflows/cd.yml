@@ -55,6 +55,15 @@ jobs:
           docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:${{ github.sha }} \
                        -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest .
 
+      # Separate image carrying sequelize-cli, used by Ansible to apply
+      # migrations. Kept out of the runtime image to keep it lean and to keep
+      # its dev-only dependencies out of the production audit surface.
+      - name: Build migration runner image
+        run: |
+          docker build --target migrator \
+                       -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:${{ github.sha }} \
+                       -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest .
+
       # Scan the built image before pushing; fail on CRITICAL findings
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
@@ -71,10 +80,12 @@ jobs:
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Push image (sha + latest)
+      - name: Push images (sha + latest)
         run: |
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:${{ github.sha }}
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:${{ github.sha }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest
 
   deploy:
     runs-on: ubuntu-latest
@@ -82,8 +93,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ansible-core ships only ansible.builtin. The playbooks also use
+      # community.docker (docker_login) and community.general (ufw), so the
+      # collections must be installed explicitly or the deploy fails on its
+      # first task with an unresolved module.
       - name: Install Ansible
-        run: pipx install ansible-core && pipx inject ansible-core requests || sudo apt-get update && sudo apt-get install -y ansible
+        run: |
+          set -euo pipefail
+          pipx install ansible-core
+          pipx inject ansible-core requests
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Show Ansible version and installed collections
+        run: |
+          ansible --version
+          ansible-galaxy collection list
 
       - name: Write SSH key
         run: |
@@ -101,18 +125,22 @@ jobs:
           ansible_user=${{ secrets.VM_ADMIN_USER }}
           ansible_ssh_private_key_file=~/.ssh/deploy_key
           ansible_python_interpreter=/usr/bin/python3
-          ansible_ssh_common_args=-o StrictHostKeyChecking=no -o ProxyJump=${{ secrets.VM_ADMIN_USER }}@${{ secrets.JUMPBOX_IP }} -o ProxyCommand=none
+          ansible_ssh_common_args=-o StrictHostKeyChecking=no -o ProxyJump=${{ secrets.VM_ADMIN_USER }}@${{ secrets.JUMPBOX_IP }}
           EOF
 
       - name: Deploy with Ansible
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          # The playbooks run from the repo root, where Ansible would not
+          # otherwise find ansible/ansible.cfg.
+          ANSIBLE_CONFIG: ${{ github.workspace }}/ansible/ansible.cfg
         run: |
           ansible-playbook -i inventory.ini ansible/deploy.yml \
             -e registry_server=${{ secrets.ACR_LOGIN_SERVER }} \
             -e registry_username=${{ secrets.ACR_USERNAME }} \
             -e registry_password=${{ secrets.ACR_PASSWORD }} \
             -e app_image=${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest \
+            -e migrator_image=${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest \
             -e database_url='${{ secrets.DATABASE_URL }}' \
             -e jwt_secret='${{ secrets.JWT_SECRET }}' \
             -e use_managed_db=true

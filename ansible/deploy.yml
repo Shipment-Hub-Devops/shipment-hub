@@ -14,6 +14,7 @@
   vars:
     app_dir: /opt/shipment-hub
     app_image: "{{ registry_server }}/shipmenthub-api:latest"
+    migrator_image: "{{ registry_server }}/shipmenthub-migrator:latest"
 
   tasks:
     - name: Log in to container registry
@@ -29,11 +30,37 @@
         dest: "{{ app_dir }}/docker-compose.yml"
         mode: "0644"
 
+    # --profile migrate is needed so the one-off migration image is fetched too
     - name: Pull latest images
       ansible.builtin.command:
-        cmd: docker compose pull
+        cmd: docker compose --profile migrate pull
         chdir: "{{ app_dir }}"
       changed_when: true
+
+    # When running against the local postgres container the database must be
+    # up before migrations can be applied. Skipped for the managed database,
+    # which is provisioned by Terraform and always available.
+    - name: Start the database container
+      ansible.builtin.command:
+        cmd: docker compose up -d db
+        chdir: "{{ app_dir }}"
+      changed_when: true
+      when: not (use_managed_db | default(false) | bool)
+
+    # Applies api/src/database/migrations. The runtime image has no
+    # sequelize-cli, so this runs the dedicated migrator image. Must happen
+    # BEFORE the API starts: the app only calls sequelize.authenticate() and
+    # never creates its own schema.
+    - name: Apply database migrations
+      ansible.builtin.command:
+        cmd: docker compose run --rm migrate
+        chdir: "{{ app_dir }}"
+      register: migration_result
+      changed_when: "'No migrations were executed' not in migration_result.stdout"
+
+    - name: Show migration output
+      ansible.builtin.debug:
+        msg: "{{ migration_result.stdout_lines }}"
 
     - name: Start / restart services
       ansible.builtin.command:
@@ -41,6 +68,8 @@
         chdir: "{{ app_dir }}"
       changed_when: true
 
+    # Liveness only: /health is a static route that never touches the database,
+    # so a 200 here proves the process is up, not that it can serve data.
     - name: Wait for API health endpoint
       ansible.builtin.uri:
         url: http://localhost:4000/health
@@ -49,6 +78,20 @@
       retries: 10
       delay: 5
       until: health.status == 200
+
+    # Readiness: confirms the schema is actually present and reachable, which
+    # the liveness probe above cannot tell us.
+    - name: Verify database schema is applied
+      ansible.builtin.command:
+        cmd: docker compose run --rm migrate node_modules/.bin/sequelize-cli db:migrate:status
+        chdir: "{{ app_dir }}"
+      register: migration_status
+      changed_when: false
+
+    - name: Fail if any migration is still pending
+      ansible.builtin.fail:
+        msg: "Pending migrations after deploy: {{ migration_status.stdout_lines | select('search', '^down ') | list }}"
+      when: migration_status.stdout is search('^down ', multiline=True)
 
     - name: Remove dangling images
       ansible.builtin.command:

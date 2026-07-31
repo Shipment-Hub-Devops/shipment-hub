@@ -1,0 +1,14 @@
+---
+# Ansible collections required by the ShipmentHub playbooks.
+#
+# ansible-core ships only ansible.builtin, so these must be installed
+# explicitly on any control node (including the CD runner):
+#   ansible-galaxy collection install -r ansible/requirements.yml
+#
+#   community.docker  -> docker_login       (deploy.yml)
+#   community.general -> ufw                (playbook.yml)
+collections:
+  - name: community.docker
+    version: ">=3.4.0"
+  - name: community.general
+    version: ">=8.0.0"
