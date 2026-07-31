@@ -17,3 +17,14 @@ output "registry_login_server" {
   description = "The URL for Docker to push/pull images"
   value       = module.registry.registry_login_server
 }
+
+output "registry_admin_username" {
+  description = "ACR admin username — used by the CD pipeline to log in to the registry"
+  value       = module.registry.registry_admin_username
+}
+
+output "registry_admin_password" {
+  description = "ACR admin password — used by the CD pipeline to log in to the registry"
+  value       = module.registry.registry_admin_password
+  sensitive   = true
+}
