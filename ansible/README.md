@@ -49,6 +49,62 @@ The app ships as a container defined by the repository root `Dockerfile`:
 `docker-compose.yml` runs the API together with a **PostgreSQL 16** database,
 with a healthcheck gate so the API only starts once the database is ready.
 
+## Continuous Deployment (`.github/workflows/cd.yml`)
+
+On every push to `main`, the CD pipeline:
+
+1. Calls `ci.yml` as a reusable workflow (`workflow_call`) to re-run lint,
+   tests, and the security scans — a merge is not deployed if any of these fail.
+2. Authenticates to Azure (`azure/login`) and builds/pushes the API image to
+   ACR, tagged with the commit SHA.
+3. Generates a throwaway Ansible inventory (never commit real IPs) that routes
+   SSH to the private app VM through the bastion (`ProxyCommand`), then runs
+   `deploy.yml` with the new image tag, registry credentials, and app secrets.
+
+`playbook.yml` is **not** run by CD — it's one-time server bootstrapping
+applied manually after `terraform apply`, before the first deploy.
+
+### Required GitHub Actions secrets (Settings > Secrets and variables > Actions > Secrets)
+
+| Secret | Value |
+|---|---|
+| `AZURE_CREDENTIALS` | JSON service principal credentials (see below) used for `azure/login` |
+| `REGISTRY_USERNAME` | ACR admin username — `terraform output registry_admin_username` |
+| `REGISTRY_PASSWORD` | ACR admin password — `terraform output registry_admin_password` (sensitive) |
+| `SSH_PRIVATE_KEY` | Private key matching the `ssh_public_key` Terraform put on both VMs |
+| `DATABASE_URL` | Postgres connection string for the managed DB — `terraform output database_fqdn` plus credentials |
+| `JWT_SECRET` | Application JWT signing secret |
+| `POSTGRES_PASSWORD` | Used by the `backend` CI job's test Postgres service |
+
+### Required GitHub Actions variables (same page, "Variables" tab — not secret, but repo-specific)
+
+| Variable | Value |
+|---|---|
+| `ACR_NAME` | Registry short name, e.g. `shipmenthubacr` (used by `az acr login --name`) |
+| `ACR_LOGIN_SERVER` | `terraform output registry_login_server`, e.g. `shipmenthubacr.azurecr.io` |
+| `BASTION_HOST` | `terraform output bastion_public_ip` |
+| `APP_VM_PRIVATE_IP` | `terraform output app_vm_private_ip` |
+| `SSH_USER` | VM admin username, e.g. `azureadmin` |
+
+Re-run the relevant `terraform output` command and update these values whenever
+infrastructure is re-provisioned (a new `terraform apply` can change the
+bastion's public IP).
+
+### Creating the `AZURE_CREDENTIALS` service principal
+
+```bash
+az ad sp create-for-rbac \
+  --name shipment-hub-cd \
+  --role AcrPush \
+  --scopes /subscriptions/<subscription-id>/resourceGroups/<resource-group> \
+  --sdk-auth
+```
+
+Paste the full JSON output (`clientId`, `clientSecret`, `subscriptionId`,
+`tenantId`) as the `AZURE_CREDENTIALS` secret. `AcrPush` scoped to the resource
+group is enough for `az acr login` + `docker push`; it does not grant access to
+the VM or database.
+
 ## Validation status
 
 Validated end-to-end against an Azure VM (Ubuntu 22.04):
