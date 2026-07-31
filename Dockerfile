@@ -51,8 +51,17 @@ COPY api/package*.json ./
 COPY api/src/ ./src/
 COPY api/.sequelizerc ./
 
-# Transfers the ownership of the /app directory to the node user to prevent permission issues when running the app 
+# Transfers the ownership of the /app directory to the node user to prevent permission issues when running the app
 RUN chown -R node:node /app
+
+# Remove npm from the runtime image. The container starts the app with `node`
+# directly and never installs anything, so a package manager here is dead
+# weight — and npm vendors its own copy of `tar`, which is the only CRITICAL
+# Trivy reports against this image (CVE-2026-59873). Dropping npm removes the
+# finding at source rather than suppressing it.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
 
 # Switches to the non-root node user for security reasons
 USER node

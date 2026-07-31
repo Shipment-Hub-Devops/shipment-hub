@@ -41,8 +41,11 @@ jobs:
         run: npm ci
       - name: Lint
         run: npm run lint
+      # Must match the gate in ci.yml: --omit=dev. Auditing the full tree
+      # fails on advisories in build-only tooling (eslint, jest, sequelize-cli)
+      # that never ships in the runtime image.
       - name: Dependency scan
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=high --omit=dev
 
   build-and-push:
     runs-on: ubuntu-latest
