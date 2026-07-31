@@ -103,10 +103,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Run npm audit to check for known vulnerabilities in dependencies
-      # --audit-level=high means pipeline only fails on high or critical vulnerabilities
-      - name: Run npm audit
-        run: npm audit --audit-level=high
+      # Gate on vulnerabilities that actually ship in the runtime image.
+      # --omit=dev excludes build-only tooling (eslint, jest, sequelize-cli, nodemon),
+      # whose transitive vulns are never present at runtime.
+      - name: Run npm audit (production dependencies)
+        run: npm audit --audit-level=high --omit=dev
+
+      # Full tree including devDependencies. Reported for visibility but does not
+      # block the pipeline, since dev-only tooling is not part of the shipped image.
+      - name: Audit dev dependencies (informational)
+        run: npm audit --audit-level=high || true
 
   # Container image scanning job: scans Docker image for vulnerabilities using Trivy
   image-scan:
