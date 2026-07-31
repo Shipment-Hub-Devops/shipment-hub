@@ -1,5 +1,7 @@
 # CI Pipeline for ShipmentHub
-# Runs automatically on every push to feature branches and on PRs targeting main
+# Runs automatically on every push to feature branches and on PRs targeting main.
+# Also exposed as a reusable workflow (workflow_call) so cd.yml can run the exact
+# same checks as a gate before deploying, instead of maintaining a second copy.
 name: CI Pipeline
 
 on:
@@ -11,6 +13,8 @@ on:
   pull_request:
     branches:
       - main
+  # Allow other workflows (cd.yml) to call this one as a job
+  workflow_call:
 
 jobs:
   # Backend job: validates the Express API in the api/ folder
@@ -55,7 +59,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: api/package-lock.json
 
-      # this instaslls the dependencies from package-lock.json without changing them
+      # this installs the dependencies from package-lock.json without changing them
       - name: Install dependencies
         run: npm ci
 
