@@ -18,5 +18,9 @@ my_public_ip        = "000.00.000.00/32"
 # Must be globally unique across Azure, alphanumeric only.
 registry_name       = "azureshipmentacrdev001"
 
+# Also globally unique — becomes <name>.postgres.database.azure.com.
+# Reusing another tenant's name fails with ServerNameAlreadyExists.
+db_server_name      = "shipment-hub-pg-dev001"
+
 # Postgres administrator password. Do not commit a real value.
 db_admin_password   = "change-me-to-a-strong-password"

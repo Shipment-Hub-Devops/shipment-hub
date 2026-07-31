@@ -32,6 +32,14 @@ variable "registry_name" {
   type        = string
 }
 
+# Like registry_name, this is part of a globally unique DNS name
+# (<name>.postgres.database.azure.com), so it cannot carry a default —
+# a shared default collides with any other tenant that kept theirs.
+variable "db_server_name" {
+  description = "Globally unique name for the PostgreSQL flexible server"
+  type        = string
+}
+
 variable "db_admin_password" {
   description = "Password for the database administrator"
   type        = string
