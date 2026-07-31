@@ -1,10 +1,22 @@
 # Environment: Development
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+# Subscription to deploy into. Required, and deliberately has no default —
+# list yours with `az account list --output table`.
+# Getting this wrong deploys real infrastructure into the wrong subscription.
+subscription_id     = "00000000-0000-0000-0000-000000000000"
+
 name_of_rg          = "azure-shipment-dev-rg"
 location            = "uaenorth"
 user_admin          = "azureadmin"
 ssh_public_key_path = "~/.ssh/id_rsa.pub"
 
-Replace this with your actual personal public IP 
-my_public_ip        = "000.00.000.00/32" 
+# Your personal public IP, used for the bastion SSH allow rule.
+# Find it with: curl https://api.ipify.org
+my_public_ip        = "000.00.000.00/32"
 
+# Must be globally unique across Azure, alphanumeric only.
 registry_name       = "azureshipmentacrdev001"
+
+# Postgres administrator password. Do not commit a real value.
+db_admin_password   = "change-me-to-a-strong-password"

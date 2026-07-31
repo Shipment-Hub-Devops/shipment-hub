@@ -37,3 +37,9 @@ variable "db_admin_password" {
   type        = string
   sensitive   = true
 }
+
+# Intentionally has no default: see the comment in providers.tf.
+variable "subscription_id" {
+  description = "Azure subscription ID to deploy into (az account list -o table)"
+  type        = string
+}
