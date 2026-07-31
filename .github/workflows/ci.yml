@@ -40,7 +40,7 @@ jobs:
 
     defaults:
       run:
-        # Set the  working directory to api folder for all steps of the workflow since this is the backend job
+        # Set the working directory to api folder for all steps of the workflow since this is the backend job
         working-directory: ./api
 
     steps:
@@ -126,8 +126,11 @@ jobs:
       - name: Build Docker image
         run: docker build -t shipmenthub-api:scan -f Dockerfile .
 
-      # Scan the Docker image for vulnerabilities
-      # --exit-code 1 means pipeline fails if HIGH or CRITICAL vulnerabilities are found
+      # Scan the Docker image for vulnerabilities.
+      # exit-code: '0' means this step REPORTS findings but does not fail the build.
+      # It is not currently a gate: the image has outstanding HIGH/CRITICAL findings
+      # (alpine base + node libraries), so flipping this to '1' blocks all merges
+      # until those are remediated. Raise it to '1' once the image is clean.
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -136,31 +139,47 @@ jobs:
           exit-code: '0'
           severity: 'HIGH,CRITICAL'
 
-  # # Frontend job: will be enabled once the web/ folder is pushed to the repo
-  # # Currently set to continue-on-error to avoid blocking the pipeline
-  # frontend:
-  #   runs-on: ubuntu-latest
-  #   continue-on-error: true
-  #   defaults:
-  #     run:
-  #       # Set working directory to web folder for all steps
-  #       working-directory: ./web
+  # Frontend job: runs linting on the Next.js web application
+  frontend:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        # Set working directory to web folder for all steps
+        working-directory: ./web
 
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  #     # Set up Node.js 20 to match GitHub Actions runner
-  #     - name: Set up Node.js
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
+      # Set up Node.js 20 to match GitHub Actions runner
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-  #     # --legacy-peer-deps needed due to react-leaflet v5 requiring React 19
-  #     # while the project uses React 18
-  #     - name: Install dependencies
-  #       run: npm install --legacy-peer-deps
+      # --legacy-peer-deps needed due to react-leaflet v5 requiring React 19
+      # while the project uses React 18
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
 
-  #     # Fail pipeline if linting errors are found
-  #     - name: Run linting
-  #       run: npm run lint
+      # Fail pipeline if linting errors are found
+      - name: Run linting
+        run: npm run lint
+
+  # IaC scanning job: scans Terraform files for security misconfigurations using Checkov
+  iac-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Install Checkov, an open source IaC static analysis tool
+      - name: Install Checkov
+        run: pip install checkov
+
+      # Scan the terraform/ directory for security misconfigurations
+      # --soft-fail means findings are reported but pipeline is not blocked
+      - name: Run Checkov on Terraform files
+        run: checkov -d terraform/ --soft-fail

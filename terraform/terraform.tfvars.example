@@ -1,0 +1,10 @@
+# Environment: Development
+name_of_rg          = "azure-shipment-dev-rg"
+location            = "uaenorth"
+user_admin          = "azureadmin"
+ssh_public_key_path = "~/.ssh/id_rsa.pub"
+
+Replace this with your actual personal public IP 
+my_public_ip        = "000.00.000.00/32" 
+
+registry_name       = "azureshipmentacrdev001"
