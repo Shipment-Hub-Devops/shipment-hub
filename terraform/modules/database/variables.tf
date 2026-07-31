@@ -18,10 +18,12 @@ variable "db_subnet_id" {
   type        = string
 }
 
+# No default: the server name forms a globally unique DNS record, so a
+# shared default fails with ServerNameAlreadyExists once any other tenant
+# has used it. Always supplied from the root module.
 variable "db_server_name" {
-  description = "The name of the PostgreSQL server"
+  description = "The name of the PostgreSQL server (globally unique)"
   type        = string
-  default     = "shipment-hub-pg-db001"
 }
 
 variable "db_admin_username" {

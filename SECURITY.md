@@ -64,6 +64,79 @@ Since ShipmentHub is a student project and not yet in production, these findings
 | Public access configurations in Terraform | MEDIUM | Tighten NSG and security group rules | Before production deployment |
 | Missing logging and monitoring in Terraform | LOW | Add diagnostic settings and logging configuration | Before production deployment |
 
+## Summative deployment — security decisions (31 July 2026)
+
+Deploying to the live Azure environment surfaced three findings that supersede
+parts of the sections above. Each is recorded here with what we actually did.
+
+### 1. CRITICAL in the runtime image — FIXED
+
+The table above reports "CRITICAL: 0". That is no longer accurate. Trivy now
+reports one CRITICAL against the API image:
+
+| CVE | Package | Path |
+|-----|---------|------|
+| CVE-2026-59873 | tar 6.2.1 → 7.5.19 | `usr/local/lib/node_modules/npm/node_modules/tar` |
+
+The package is not one of ours. `npm ls tar --omit=dev` returns empty — it is
+vendored inside the copy of **npm** that ships in the `node:20-alpine` base
+image.
+
+**Action taken: fixed, not accepted.** The runtime container starts the app
+with `node` directly and never installs anything, so npm has no purpose there.
+The Dockerfile now deletes npm from the final stage, which removes the
+vulnerable code from the image entirely rather than suppressing the alert. This
+also shrinks the image.
+
+### 2. SSH exposed to the internet — ACCEPTED RISK
+
+The bastion NSG previously permitted SSH only from a single operator's home IP
+address. That has been widened to `Internet`.
+
+**Why the restriction could not be kept:**
+
+- The CD pipeline deploys from GitHub-hosted runners, which take an
+  unpredictable address from a large pool on every run. A fixed allow-list
+  cannot admit them, and GitHub's published ranges are thousands of CIDRs that
+  rotate — impractical to encode in an NSG.
+- A single home address also excluded every other team member, and broke
+  whenever that address was reassigned by the ISP.
+
+**Compensating controls** (applied by `ansible/playbook.yml`, verified on the
+running host):
+
+| Control | Setting |
+|---------|---------|
+| Password authentication | `no` — key-only, so password guessing cannot succeed |
+| Root login | `PermitRootLogin no` |
+| Failed attempts per connection | `MaxAuthTries 3` |
+| Host firewall | UFW default-deny inbound |
+
+**Residual risk:** automated scanners will attempt connections and generate log
+noise. Without the corresponding private key they cannot authenticate. Only the
+bastion is exposed; the application VM has no public IP and its NSG accepts
+traffic solely from inside the VNet.
+
+**Preferred long-term fix:** have the pipeline add a temporary NSG rule scoped
+to the runner's own address for the duration of a deploy and remove it
+afterwards, returning the default state to closed. This needs an Azure service
+principal and was judged too large a change for the current deadline.
+
+**To revert:** set `source_address_prefix` back to `var.my_public_ip` in
+`terraform/modules/security/main.tf`. The variable is still declared and wired
+through, so no other change is required.
+
+### 3. npm audit scope — corrected
+
+The claim above that npm audit found no HIGH or CRITICAL issues needs
+qualifying. The **production** dependency tree is clean, which is what both
+pipelines now gate on (`npm audit --audit-level=high --omit=dev`). The full
+tree including devDependencies reports 29 HIGH, all tracing to a single
+advisory (GHSA-mh99-v99m-4gvg in `brace-expansion`) reached only through build
+tooling — eslint, jest, sequelize-cli and nodemon — none of which ships in the
+runtime image. The full-tree audit still runs in CI as a non-blocking step so
+these stay visible.
+
 ## Found something?
 
 If you discover a security vulnerability in ShipmentHub, please open a GitHub issue with the `security` label and describe what you found in as much detail as possible.

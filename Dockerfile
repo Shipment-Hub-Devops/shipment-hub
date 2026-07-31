@@ -11,6 +11,31 @@ COPY api/package*.json ./
 # Installs the dependencies defined in package-lock.json, but omits dev dependencies to reduce image size
 RUN npm ci --omit=dev
 
+# Migration runner stage.
+# sequelize-cli is a devDependency and is deliberately kept OUT of the runtime
+# image: it pulls in js-beautify -> minimatch -> brace-expansion, which would
+# reintroduce high-severity findings into the production dependency audit.
+# Built and run as a separate one-off container by ansible/deploy.yml.
+# Declared before the runtime stage so `docker build .` still defaults to the app.
+FROM node:20-alpine AS migrator
+
+WORKDIR /app
+
+# Full dependency install here - sequelize-cli is required to apply migrations
+COPY api/package*.json ./
+RUN npm ci
+
+# .sequelizerc resolves config/migrations/seeders paths relative to the workdir
+COPY api/.sequelizerc ./
+COPY api/src/ ./src/
+
+RUN chown -R node:node /app
+USER node
+
+# Invoke the binary directly rather than via `npm run` to avoid npm needing a
+# writable cache directory when running as the unprivileged node user.
+CMD ["node_modules/.bin/sequelize-cli", "db:migrate"]
+
 # Second, we copy the rest of the application code into the image
 # Starts a fresh image from the same Node 20 base image to keep the final image size small
 FROM node:20-alpine
@@ -26,8 +51,17 @@ COPY api/package*.json ./
 COPY api/src/ ./src/
 COPY api/.sequelizerc ./
 
-# Transfers the ownership of the /app directory to the node user to prevent permission issues when running the app 
+# Transfers the ownership of the /app directory to the node user to prevent permission issues when running the app
 RUN chown -R node:node /app
+
+# Remove npm from the runtime image. The container starts the app with `node`
+# directly and never installs anything, so a package manager here is dead
+# weight — and npm vendors its own copy of `tar`, which is the only CRITICAL
+# Trivy reports against this image (CVE-2026-59873). Dropping npm removes the
+# finding at source rather than suppressing it.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
 
 # Switches to the non-root node user for security reasons
 USER node
