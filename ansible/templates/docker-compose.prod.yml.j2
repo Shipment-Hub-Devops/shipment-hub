@@ -1,5 +1,6 @@
 # Rendered by ansible/deploy.yml — do not edit on the server.
 services:
+{% if not (use_managed_db | default(false)) %}
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -16,13 +17,16 @@ services:
       retries: 5
     networks:
       - shipment-network
+{% endif %}
 
   api:
     image: "{{ app_image }}"
     restart: unless-stopped
+{% if not (use_managed_db | default(false)) %}
     depends_on:
       db:
         condition: service_healthy
+{% endif %}
     ports:
       - "4000:4000"
     environment:
@@ -35,8 +39,10 @@ services:
     networks:
       - shipment-network
 
+{% if not (use_managed_db | default(false)) %}
 volumes:
   pgdata:
+{% endif %}
 
 networks:
   shipment-network:

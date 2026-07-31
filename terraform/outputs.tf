@@ -17,3 +17,17 @@ output "registry_login_server" {
   description = "The URL for Docker to push/pull images"
   value       = module.registry.registry_login_server
 }
+
+# Re-exported at the root so the CD pipeline's ACR_USERNAME / ACR_PASSWORD
+# secrets can be read with `terraform output`. The registry module already
+# exposes these, but module outputs are not visible from the root without this.
+output "registry_admin_username" {
+  description = "ACR admin username — populates the ACR_USERNAME secret"
+  value       = module.registry.registry_admin_username
+}
+
+output "registry_admin_password" {
+  description = "ACR admin password — populates the ACR_PASSWORD secret"
+  value       = module.registry.registry_admin_password
+  sensitive   = true
+}
