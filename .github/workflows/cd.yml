@@ -1,5 +1,10 @@
-# CD Pipeline for ShipmentHub — runs ONLY on merge/push to main.
-# Flow: verify (CI checks) -> build & push image to ACR -> deploy via Ansible.
+# CD Pipeline for ShipmentHub — "Deploy to Production"
+#
+# Triggers ONLY on a merge/push to main. Implements the Git-to-Production flow:
+#   1. Re-run the full CI suite (lint, test, dependency/image/IaC security scans)
+#   2. Build the API and migration images and push them to Azure Container Registry
+#   3. Run the Ansible playbook against the private app VM (via the bastion) to
+#      apply migrations, pull the new image and restart the stack
 #
 # Required repository secrets, and where each value comes from.
 # Run `terraform output` in terraform/ after applying:
@@ -23,59 +28,40 @@ on:
     branches:
       - main
 
+# Prevent two deploys from racing each other if two merges land close together.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 jobs:
-  # Re-run the same quality gates as CI before shipping
-  verify:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./api
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: api/package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Lint
-        run: npm run lint
-      # Must match the gate in ci.yml: --omit=dev. Auditing the full tree
-      # fails on advisories in build-only tooling (eslint, jest, sequelize-cli)
-      # that never ships in the runtime image.
-      - name: Dependency scan
-        run: npm audit --audit-level=high --omit=dev
 
+  # Job 1: Run the same checks CI runs on every PR (lint, tests, npm audit,
+  # Trivy image scan, Checkov IaC scan). This is the pipeline's security gate —
+  # a merge to main is not allowed to skip straight to deployment. Reusing
+  # ci.yml (via workflow_call) instead of copy-pasting its jobs means the two
+  # workflows can never drift out of sync.
+  ci:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  # Job 2: Build the production images and push them to ACR.
+  # Runs only if every CI job succeeded.
   build-and-push:
+    name: Build & push images to ACR
+    needs: ci
     runs-on: ubuntu-latest
-    needs: verify
+    outputs:
+      image: ${{ steps.image-tag.outputs.image }}
+      migrator: ${{ steps.image-tag.outputs.migrator }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: |
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:${{ github.sha }} \
-                       -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest .
-
-      # Separate image carrying sequelize-cli, used by Ansible to apply
-      # migrations. Kept out of the runtime image to keep it lean and to keep
-      # its dev-only dependencies out of the production audit surface.
-      - name: Build migration runner image
-        run: |
-          docker build --target migrator \
-                       -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:${{ github.sha }} \
-                       -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest .
-
-      # Scan the built image before pushing; fail on CRITICAL findings
-      - name: Trivy image scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest'
-          format: 'table'
-          exit-code: '1'
-          severity: 'CRITICAL'
-
+      # Authenticates to the registry with the ACR admin credentials produced by
+      # Terraform. A service principal + `azure/login` would be preferable — it
+      # exchanges for a short-lived token instead of a long-lived password — but
+      # that needs an AZURE_CREDENTIALS secret which is not provisioned yet.
+      # Swap this step for azure/login + `az acr login` once it is.
       - name: Log in to Azure Container Registry
         uses: docker/login-action@v3
         with:
@@ -83,67 +69,114 @@ jobs:
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Push images (sha + latest)
+      # Tag with the commit SHA (immutable, traceable, lets deploy.yml pull a
+      # specific version) as well as :latest (for convenience / manual pulls).
+      - name: Compute image tags
+        id: image-tag
         run: |
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:${{ github.sha }}
+          echo "image=${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "migrator=${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ steps.image-tag.outputs.image }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest \
+            -f Dockerfile .
+
+      # Separate image carrying sequelize-cli, used by Ansible to apply
+      # migrations. Kept out of the runtime image to keep it lean and to keep
+      # its dev-only dependencies out of the production audit surface.
+      - name: Build migration runner image
+        run: |
+          docker build --target migrator \
+            -t ${{ steps.image-tag.outputs.migrator }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest \
+            -f Dockerfile .
+
+      # Fail the deploy before anything is published if the image carries a
+      # CRITICAL vulnerability.
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ steps.image-tag.outputs.image }}'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL'
+
+      - name: Push Docker images
+        run: |
+          docker push ${{ steps.image-tag.outputs.image }}
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:${{ github.sha }}
+          docker push ${{ steps.image-tag.outputs.migrator }}
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest
 
+  # Job 3: Configure and deploy via Ansible.
+  # The app VM has no public IP (see terraform/modules/compute/main.tf), so
+  # every SSH connection has to hop through the bastion host. This job builds
+  # an inventory at runtime (never commit real IPs) and proxies through it.
   deploy:
-    runs-on: ubuntu-latest
+    name: Deploy to production VM
     needs: build-and-push
+    runs-on: ubuntu-latest
+    env:
+      # The playbooks run from the repo root, where Ansible would not otherwise
+      # find ansible/ansible.cfg.
+      ANSIBLE_CONFIG: ${{ github.workspace }}/ansible/ansible.cfg
+      ANSIBLE_HOST_KEY_CHECKING: 'False'
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # ansible-core ships only ansible.builtin. The playbooks also use
-      # community.docker (docker_login) and community.general (ufw), so the
-      # collections must be installed explicitly or the deploy fails on its
-      # first task with an unresolved module.
+      # ansible-core ships only ansible.builtin. deploy.yml uses
+      # community.docker and playbook.yml uses community.general, so the
+      # collections must be installed explicitly or the run fails on its first
+      # task with an unresolved module.
       - name: Install Ansible
         run: |
           set -euo pipefail
-          pipx install ansible-core
-          pipx inject ansible-core requests
+          python3 -m pip install --upgrade pip
+          pip install ansible-core
           ansible-galaxy collection install -r ansible/requirements.yml
 
-      - name: Show Ansible version and installed collections
-        run: |
-          ansible --version
-          ansible-galaxy collection list
+      # Loads the deploy key into an SSH agent for this job only; nothing is
+      # written to disk beyond the agent socket, and the key never appears in logs.
+      - name: Configure SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Write SSH key
+      # Generated fresh every run instead of committing ansible/inventory.ini
+      # with real IPs. ansible_ssh_common_args tells every SSH connection to
+      # the app VM to tunnel through the bastion first (ProxyCommand), since
+      # the app VM's private IP is unreachable directly from the internet.
+      # StrictHostKeyChecking is disabled because this is a short-lived CI
+      # runner with no prior known_hosts entry for infrastructure we own;
+      # do not disable this for connections to hosts outside your control.
+      - name: Generate dynamic inventory
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-
-      - name: Write inventory (app VM via jumpbox)
-        run: |
-          cat > inventory.ini <<EOF
+          cat > inventory.cd.ini <<EOF
           [web]
-          shipment-hub-vm ansible_host=${{ secrets.APP_VM_PRIVATE_IP }}
-
-          [web:vars]
-          ansible_user=${{ secrets.VM_ADMIN_USER }}
-          ansible_ssh_private_key_file=~/.ssh/deploy_key
-          ansible_python_interpreter=/usr/bin/python3
-          ansible_ssh_common_args=-o StrictHostKeyChecking=no -o ProxyJump=${{ secrets.VM_ADMIN_USER }}@${{ secrets.JUMPBOX_IP }}
+          shipment-hub-vm ansible_host=${{ secrets.APP_VM_PRIVATE_IP }} ansible_user=${{ secrets.VM_ADMIN_USER }} ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyCommand="ssh -o StrictHostKeyChecking=no -W %h:%p -q ${{ secrets.VM_ADMIN_USER }}@${{ secrets.JUMPBOX_IP }}"'
           EOF
 
-      - name: Deploy with Ansible
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: 'False'
-          # The playbooks run from the repo root, where Ansible would not
-          # otherwise find ansible/ansible.cfg.
-          ANSIBLE_CONFIG: ${{ github.workspace }}/ansible/ansible.cfg
+      # Runs deploy.yml (not playbook.yml — playbook.yml is the one-time server
+      # setup that installs Docker/UFW/SSH-hardening and is applied manually,
+      # not on every deploy). deploy.yml logs into ACR from the VM, renders the
+      # production docker-compose file, applies migrations, then restarts the
+      # stack and verifies no migration is left pending.
+      #
+      # use_managed_db=true is required: without it the compose template also
+      # renders a local postgres container and points the API at it instead of
+      # the managed Azure database.
+      - name: Run Ansible deploy playbook
         run: |
-          ansible-playbook -i inventory.ini ansible/deploy.yml \
+          ansible-playbook -i inventory.cd.ini ansible/deploy.yml \
             -e registry_server=${{ secrets.ACR_LOGIN_SERVER }} \
             -e registry_username=${{ secrets.ACR_USERNAME }} \
             -e registry_password=${{ secrets.ACR_PASSWORD }} \
-            -e app_image=${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest \
-            -e migrator_image=${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest \
+            -e app_image=${{ needs.build-and-push.outputs.image }} \
+            -e migrator_image=${{ needs.build-and-push.outputs.migrator }} \
             -e database_url='${{ secrets.DATABASE_URL }}' \
             -e jwt_secret='${{ secrets.JWT_SECRET }}' \
             -e use_managed_db=true

@@ -18,16 +18,16 @@ output "registry_login_server" {
   value       = module.registry.registry_login_server
 }
 
-# Re-exported at the root so the CD pipeline's ACR_USERNAME / ACR_PASSWORD
-# secrets can be read with `terraform output`. The registry module already
-# exposes these, but module outputs are not visible from the root without this.
+# Re-exported at the root so the CD pipeline can read these with
+# `terraform output`. The registry module already exposes them, but module
+# outputs are not visible from the root without this.
 output "registry_admin_username" {
-  description = "ACR admin username — populates the ACR_USERNAME secret"
+  description = "ACR admin username — used by the CD pipeline to log in to the registry"
   value       = module.registry.registry_admin_username
 }
 
 output "registry_admin_password" {
-  description = "ACR admin password — populates the ACR_PASSWORD secret"
+  description = "ACR admin password — used by the CD pipeline to log in to the registry"
   value       = module.registry.registry_admin_password
   sensitive   = true
 }
