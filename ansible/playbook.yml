@@ -11,6 +11,7 @@
       - "{{ ansible_user }}"
     ssh_port: 22
     app_port: 4000
+    web_port: 3000
     # CIDR permitted to reach the application port. Defaults to the whole
     # VNet so the jumpbox can reverse-proxy to it; override with "any" only
     # if the VM is given a public address.
@@ -118,6 +119,15 @@
       community.general.ufw:
         rule: allow
         port: "{{ app_port }}"
+        proto: tcp
+        src: "{{ app_allowed_cidr }}"
+
+    # The frontend is reached the same way as the API: only from inside the
+    # VNet, via the nginx reverse proxy on the bastion.
+    - name: Allow frontend port from the internal network
+      community.general.ufw:
+        rule: allow
+        port: "{{ web_port }}"
         proto: tcp
         src: "{{ app_allowed_cidr }}"
 

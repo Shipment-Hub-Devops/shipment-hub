@@ -15,6 +15,7 @@
     app_dir: /opt/shipment-hub
     app_image: "{{ registry_server }}/shipmenthub-api:latest"
     migrator_image: "{{ registry_server }}/shipmenthub-migrator:latest"
+    web_image: "{{ registry_server }}/shipmenthub-web:latest"
 
   tasks:
     - name: Log in to container registry

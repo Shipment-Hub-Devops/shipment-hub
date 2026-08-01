@@ -22,6 +22,7 @@
     # Override explicitly with -e app_host=<ip> if needed.
     app_host: "{{ hostvars[groups['web'][0]]['ansible_host'] }}"
     app_port: 4000
+    web_port: 3000
 
   tasks:
     - name: Install nginx
@@ -46,15 +47,34 @@
               # Surfaces the upstream app rather than nginx in error pages
               proxy_intercept_errors off;
 
-              location / {
+              # Shared proxy settings for every location below.
+              proxy_http_version 1.1;
+              proxy_set_header Host              $host;
+              proxy_set_header X-Real-IP         $remote_addr;
+              proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+              proxy_connect_timeout 5s;
+              proxy_read_timeout    30s;
+
+              # Backend API. The frontend calls this on the same origin using a
+              # relative /api/v1 path, so there is no CORS involved and nothing
+              # environment-specific is compiled into the browser bundle.
+              location /api/ {
                   proxy_pass http://{{ app_host }}:{{ app_port }};
-                  proxy_http_version 1.1;
-                  proxy_set_header Host              $host;
-                  proxy_set_header X-Real-IP         $remote_addr;
-                  proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-                  proxy_connect_timeout 5s;
-                  proxy_read_timeout    30s;
+              }
+
+              # Liveness endpoint, kept on the API so existing checks and the
+              # deploy playbook continue to work unchanged.
+              location = /health {
+                  proxy_pass http://{{ app_host }}:{{ app_port }}/health;
+              }
+
+              # Everything else is the Next.js frontend.
+              location / {
+                  proxy_pass http://{{ app_host }}:{{ web_port }};
+                  # Next.js dev/HMR and streaming responses need upgrade headers
+                  proxy_set_header Upgrade    $http_upgrade;
+                  proxy_set_header Connection "upgrade";
               }
           }
       notify: Reload nginx

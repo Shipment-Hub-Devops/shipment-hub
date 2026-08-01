@@ -59,6 +59,7 @@ jobs:
     outputs:
       image: ${{ steps.image-tag.outputs.image }}
       migrator: ${{ steps.image-tag.outputs.migrator }}
+      web: ${{ steps.image-tag.outputs.web }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -80,8 +81,9 @@ jobs:
       - name: Compute image tags
         id: image-tag
         run: |
-          echo "image=${{ vars.ACR_LOGIN_SERVER }}/shipmenthub-api:${{ github.sha }}" >> "$GITHUB_OUTPUT"
-          echo "migrator=${{ vars.ACR_LOGIN_SERVER }}/shipmenthub-migrator:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "image=${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "migrator=${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "web=${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-web:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
       - name: Build Docker image
         run: |
@@ -100,6 +102,18 @@ jobs:
             -t ${{ vars.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest \
             -f Dockerfile .
 
+      # Next.js frontend. NEXT_PUBLIC_API_URL is passed empty on purpose: those
+      # values are inlined into the browser bundle at build time, and an empty
+      # one yields a relative /api/v1 that nginx routes to the API on the same
+      # origin. Baking an address in here would tie the image to one environment.
+      - name: Build frontend image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL= \
+            -t ${{ steps.image-tag.outputs.web }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-web:latest \
+            -f web/Dockerfile web
+
       # Fail the deploy before anything is published if the image carries a
       # CRITICAL vulnerability.
       - name: Trivy image scan
@@ -115,7 +129,9 @@ jobs:
           docker push ${{ steps.image-tag.outputs.image }}
           docker push ${{ vars.ACR_LOGIN_SERVER }}/shipmenthub-api:latest
           docker push ${{ steps.image-tag.outputs.migrator }}
-          docker push ${{ vars.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest
+          docker push ${{ steps.image-tag.outputs.web }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-web:latest
 
   # Job 3: Configure and deploy via Ansible.
   # The app VM has no public IP (see terraform/modules/compute/main.tf), so
@@ -183,6 +199,7 @@ jobs:
             -e registry_password=${{ secrets.ACR_PASSWORD }} \
             -e app_image=${{ needs.build-and-push.outputs.image }} \
             -e migrator_image=${{ needs.build-and-push.outputs.migrator }} \
+            -e web_image=${{ needs.build-and-push.outputs.web }} \
             -e database_url='${{ secrets.DATABASE_URL }}' \
             -e jwt_secret='${{ secrets.JWT_SECRET }}' \
             -e use_managed_db=true
