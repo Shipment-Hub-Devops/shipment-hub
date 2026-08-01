@@ -1,6 +1,6 @@
 # ShipmentHub
 
-Coordinate your shipments and give customers real-time visibility from pickup to delivery.
+Coordinate your shipments and give customers real-time visibility from pickup to delivery. 
 
 ## Live application
 
