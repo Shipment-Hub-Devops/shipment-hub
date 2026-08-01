@@ -78,4 +78,18 @@ resource "azurerm_network_security_group" "app_nsg" {
     source_address_prefix      = "VirtualNetwork"
     destination_address_prefix = "*"
   }
+
+  # Next.js frontend. Same posture as the API above: reachable only from inside
+  # the VNet, because the bastion's nginx is what serves it to the internet.
+  security_rule {
+    name                       = "Allow-Frontend-Traffic"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "3000"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "*"
+  }
 }
