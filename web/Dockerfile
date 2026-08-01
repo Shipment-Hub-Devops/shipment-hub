@@ -9,15 +9,6 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# NEXT_PUBLIC_* values are inlined into the client bundle during `next build`,
-# so this has to be a build argument - setting it at runtime has no effect on
-# code that runs in the browser.
-# Production passes an empty string, which yields a relative "/api/v1" and lets
-# nginx route the call to the API on the same origin.
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-
 RUN npm run build
 
 # 3. Production runner

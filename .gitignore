@@ -203,10 +203,4 @@ dist
 tfsec
 *.exe
 
-# Ansible inventory filled in with real addresses. These are environment
-# specific and change on every rebuild — regenerate from `terraform output`
-# rather than committing them. inventory.summative.ini is the committed
-# template with placeholders.
-ansible/inventory.local.ini
-
 # End of https://www.toptal.com/developers/gitignore/api/node,nextjs,visualstudiocode

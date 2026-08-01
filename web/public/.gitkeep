@@ -1,4 +1,0 @@
-# Next.js serves static assets from this directory.
-# web/Dockerfile copies it into the runtime image, so it must exist in the
-# repository even while empty — otherwise the Docker build fails with
-# "/app/public: not found".

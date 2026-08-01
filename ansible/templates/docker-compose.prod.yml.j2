@@ -48,23 +48,6 @@ services:
     networks:
       - shipment-network
 
-  # Next.js frontend. nginx on the bastion proxies to it across the private
-  # network, so it must listen on the VM's private interface — not localhost.
-  # The app NSG and UFW restrict who can reach this port to the VNet only.
-  web:
-    image: "{{ web_image }}"
-    restart: unless-stopped
-    depends_on:
-      - api
-    ports:
-      - "3000:3000"
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      HOSTNAME: "0.0.0.0"
-    networks:
-      - shipment-network
-
   # One-off schema migration runner, built from the `migrator` stage of the
   # Dockerfile (the runtime image has no sequelize-cli).
   # Held behind a compose profile so `docker compose up` never starts it;
