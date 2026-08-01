@@ -10,7 +10,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-shipmenthub_dev}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-shipmenthub_dev}" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -37,6 +37,20 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3000}
+    networks:
+      - app-network
+  
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
     networks:
       - app-network
 
