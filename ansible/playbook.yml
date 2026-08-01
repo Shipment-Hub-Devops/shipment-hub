@@ -11,6 +11,10 @@
       - "{{ ansible_user }}"
     ssh_port: 22
     app_port: 4000
+    # CIDR permitted to reach the application port. Defaults to the whole
+    # VNet so the jumpbox can reverse-proxy to it; override with "any" only
+    # if the VM is given a public address.
+    app_allowed_cidr: "10.0.0.0/16"
 
   tasks:
     # ---------------------------------------------------------------
@@ -29,6 +33,9 @@
           - curl
           - gnupg
           - git
+          # Required by community.docker.docker_login, which runs on this
+          # host during deployment and needs the Docker SDK for Python.
+          - python3-docker
         state: present
 
     # ---------------------------------------------------------------
@@ -105,11 +112,14 @@
         port: "{{ ssh_port }}"
         proto: tcp
 
-    - name: Allow application port through the firewall
+    # Scoped to the VNet: the app VM sits in a private subnet and is reached
+    # through the jumpbox reverse proxy, never directly from the internet.
+    - name: Allow application port from the internal network
       community.general.ufw:
         rule: allow
         port: "{{ app_port }}"
         proto: tcp
+        src: "{{ app_allowed_cidr }}"
 
     - name: Enable UFW with a default-deny inbound policy
       community.general.ufw:

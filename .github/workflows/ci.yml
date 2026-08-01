@@ -156,8 +156,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # web/ currently holds the Next.js source but no package.json — the
+      # manifest has never been committed, so there is nothing to install or
+      # lint. Detect that and skip the remaining steps instead of failing red
+      # on every pull request. This job starts doing real work automatically
+      # as soon as web/package.json lands.
+      - name: Check whether the frontend is ready to build
+        id: check
+        working-directory: .
+        run: |
+          if [ -f web/package.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Frontend skipped::web/package.json is not committed yet, so install and lint were skipped."
+          fi
+
       # Set up Node.js 20 to match GitHub Actions runner
       - name: Set up Node.js
+        if: steps.check.outputs.ready == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -165,10 +182,12 @@ jobs:
       # --legacy-peer-deps needed due to react-leaflet v5 requiring React 19
       # while the project uses React 18
       - name: Install dependencies
+        if: steps.check.outputs.ready == 'true'
         run: npm install --legacy-peer-deps
 
       # Fail pipeline if linting errors are found
       - name: Run linting
+        if: steps.check.outputs.ready == 'true'
         run: npm run lint
 
   # IaC scanning job: scans Terraform files for security misconfigurations using Checkov

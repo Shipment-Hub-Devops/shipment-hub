@@ -48,5 +48,6 @@ module "database" {
   location            = azurerm_resource_group.rg.location
   vnet_id             = module.network.vnet_id
   db_subnet_id        = module.network.db_subnet_id
+  db_server_name      = var.db_server_name
   db_admin_password   = var.db_admin_password
 }

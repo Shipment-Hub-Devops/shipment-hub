@@ -28,7 +28,13 @@ resource "azurerm_subnet" "db_subnet" {
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.3.0/24"]
-  
+
+  # Azure attaches this endpoint itself when the flexible server is created.
+  # Declaring it keeps the configuration matching reality — without it every
+  # subsequent plan tries to strip it back off, which risks the server's
+  # access to backup storage.
+  service_endpoints = ["Microsoft.Storage"]
+
   # This is required by azure since we are using postgres and is a managed service
   delegation {
     name = "fs-delegation"

@@ -18,6 +18,9 @@ output "registry_login_server" {
   value       = module.registry.registry_login_server
 }
 
+# Re-exported at the root so the CD pipeline can read these with
+# `terraform output`. The registry module already exposes them, but module
+# outputs are not visible from the root without this.
 output "registry_admin_username" {
   description = "ACR admin username — used by the CD pipeline to log in to the registry"
   value       = module.registry.registry_admin_username
