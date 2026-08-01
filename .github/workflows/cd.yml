@@ -9,7 +9,13 @@
 # Required repository secrets, and where each value comes from.
 # Run `terraform output` in terraform/ after applying:
 #
-#   ACR_LOGIN_SERVER   terraform output registry_login_server
+# ACR_LOGIN_SERVER is a repository VARIABLE, not a secret. It is only a
+# hostname, and — critically — GitHub drops job outputs whose values derive
+# from secrets, delivering them as empty strings. The image tags below are
+# passed between jobs as outputs, so sourcing the registry host from a secret
+# silently produced `-e app_image=` and rendered `image: ""` onto the server.
+#
+#   ACR_LOGIN_SERVER   (variable) terraform output registry_login_server
 #   ACR_USERNAME       terraform output registry_admin_username
 #   ACR_PASSWORD       terraform output -raw registry_admin_password
 #   JUMPBOX_IP         terraform output bastion_public_ip
@@ -66,7 +72,7 @@ jobs:
       - name: Log in to Azure Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          registry: ${{ vars.ACR_LOGIN_SERVER }}
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
@@ -83,7 +89,7 @@ jobs:
         run: |
           docker build \
             -t ${{ steps.image-tag.outputs.image }} \
-            -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest \
+            -t ${{ vars.ACR_LOGIN_SERVER }}/shipmenthub-api:latest \
             -f Dockerfile .
 
       # Separate image carrying sequelize-cli, used by Ansible to apply
@@ -93,7 +99,7 @@ jobs:
         run: |
           docker build --target migrator \
             -t ${{ steps.image-tag.outputs.migrator }} \
-            -t ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest \
+            -t ${{ vars.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest \
             -f Dockerfile .
 
       # Next.js frontend. NEXT_PUBLIC_API_URL is passed empty on purpose: those
@@ -121,7 +127,7 @@ jobs:
       - name: Push Docker images
         run: |
           docker push ${{ steps.image-tag.outputs.image }}
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-api:latest
+          docker push ${{ vars.ACR_LOGIN_SERVER }}/shipmenthub-api:latest
           docker push ${{ steps.image-tag.outputs.migrator }}
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/shipmenthub-migrator:latest
           docker push ${{ steps.image-tag.outputs.web }}
@@ -188,7 +194,7 @@ jobs:
       - name: Run Ansible deploy playbook
         run: |
           ansible-playbook -i inventory.cd.ini ansible/deploy.yml \
-            -e registry_server=${{ secrets.ACR_LOGIN_SERVER }} \
+            -e registry_server=${{ vars.ACR_LOGIN_SERVER }} \
             -e registry_username=${{ secrets.ACR_USERNAME }} \
             -e registry_password=${{ secrets.ACR_PASSWORD }} \
             -e app_image=${{ needs.build-and-push.outputs.image }} \
