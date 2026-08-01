@@ -145,6 +145,7 @@ jobs:
     continue-on-error: true
     defaults:
       run:
+        # Updated: web folder now available - frontend job enabled
         # Set working directory to web folder for all steps
         working-directory: ./web
 
