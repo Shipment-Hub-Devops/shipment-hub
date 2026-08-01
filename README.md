@@ -73,7 +73,7 @@ flowchart TB
     gh -->|"push images"| acr
     gh -->|"SSH via bastion<br/>ansible"| appvm
 ```
-
+ 
 **Why it is shaped this way.** The application VM holds the data path and has
 no public IP at all. The only internet-facing host is the bastion, which
 serves two jobs: it terminates public HTTP and proxies it inward, and it acts
